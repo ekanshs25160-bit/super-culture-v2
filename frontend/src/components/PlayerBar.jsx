@@ -172,12 +172,12 @@ export default function PlayerBar() {
           <div className="sc-oled-bar px-4 py-2.5 flex flex-col md:flex-row items-center justify-between gap-4">
             {/* LEFT: Album Art, Track Name, Artist, Green Heart, Add Button */}
             <div className="flex items-center gap-3 w-full md:w-[30%] min-w-0">
-              {!isEmptyPlayer ? (
+              {!isEmptyPlayer && currentTrack ? (
                 <div id="player-left-active" className="flex items-center gap-3 min-w-0 w-full">
                   <div className="relative w-12 h-12 shrink-0">
                     <CoverImage
                       id="player-cover"
-                      src={currentTrack?.cover}
+                      src={currentTrack.cover}
                       alt=""
                       iconSize="w-5 h-5"
                       className="w-12 h-12 rounded-2xl object-cover border border-white/15 shadow-md"
@@ -185,10 +185,10 @@ export default function PlayerBar() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p id="player-title" className="text-xs sm:text-sm font-semibold text-[#F4F4F2] truncate">
-                      {currentTrack?.title || 'NIGHTCALL (RUNWAY EDIT)'}
+                      {currentTrack.title}
                     </p>
                     <p id="player-artist" className="text-xs text-[#8A8A8E] truncate">
-                      {currentTrack?.artist || 'Kavinsky, Lovefoxxx'}
+                      {currentTrack.artist}
                     </p>
                   </div>
 
@@ -206,7 +206,7 @@ export default function PlayerBar() {
                   </button>
 
                   <button
-                    onClick={() => showToast(`Added "${currentTrack?.title || 'Track'}" to 35mm Night Archive`)}
+                    onClick={() => showToast(`Added "${currentTrack.title}" to queue`)}
                     aria-label="Add track to playlist"
                     className="w-8 h-8 rounded-full bg-black/85 hover:bg-black/95 border border-white/14 hover:border-white/28 flex items-center justify-center text-[#8A8A8E] hover:text-white transition shrink-0 cursor-pointer"
                   >

@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { apiClient } from '../services/api';
-import { LIBRARY_TRACKS } from '../data/tracks';
 
 const MOODS_LIST = [
   { index: 0, name: 'Energetic' },
@@ -10,21 +9,10 @@ const MOODS_LIST = [
 ];
 
 export const useLibraryStore = create((set, get) => ({
-  likedSongs: [LIBRARY_TRACKS.likedSongs],
-  likedSongIds: new Set([
-    LIBRARY_TRACKS.likedSongs.videoId,
-    'MV_3Dpw-BRY', // Nightcall default liked
-  ]),
-  likedCount: 874,
-  playlists: [
-    {
-      id: '35mm-night-archive',
-      name: '35mm Night Archive',
-      description: 'Sora Curated Archive',
-      coverUrl: LIBRARY_TRACKS.tapeArchive.cover,
-      createdAt: new Date().toISOString(),
-    },
-  ],
+  likedSongs: [],
+  likedSongIds: new Set(),
+  likedCount: 0,
+  playlists: [],
   mood: MOODS_LIST[0],
   mode: 'public',
   loading: false,
@@ -48,12 +36,7 @@ export const useLibraryStore = create((set, get) => ({
     set({ loading: true, error: null });
     try {
       const data = await apiClient.library.getOverview();
-      const serverLikedIds = new Set((data.likedSongs || []).map((s) => s.videoId));
-      
-      // Preserve default seed tracks if server list is brand new
-      if (serverLikedIds.size === 0) {
-        serverLikedIds.add('MV_3Dpw-BRY');
-      }
+      const serverLikedIds = new Set((data.likedSongs || []).map((s) => s.videoId || s.id));
 
       let activeMood = get().mood;
       if (data.user?.mood) {
@@ -62,16 +45,16 @@ export const useLibraryStore = create((set, get) => ({
       }
 
       set({
-        likedSongs: data.likedSongs?.length ? data.likedSongs : get().likedSongs,
+        likedSongs: Array.isArray(data.likedSongs) ? data.likedSongs : [],
         likedSongIds: serverLikedIds,
-        likedCount: data.likedSongsCount || (data.likedSongs?.length ? data.likedSongs.length : 874),
-        playlists: data.playlists?.length ? data.playlists : get().playlists,
+        likedCount: data.likedSongs?.length ?? 0,
+        playlists: Array.isArray(data.playlists) ? data.playlists : [],
         mood: activeMood,
         mode: data.user?.mode || 'public',
         loading: false,
       });
     } catch (err) {
-      console.warn('[LibraryStore] Failed to fetch overview, using fallback seed:', err.message);
+      console.warn('[LibraryStore] Failed to fetch overview:', err.message);
       set({ loading: false, error: err.message });
     }
   },
@@ -102,10 +85,13 @@ export const useLibraryStore = create((set, get) => ({
       nextLikedIds.add(videoId);
       nextLikedSongs.unshift({
         videoId,
+        id: videoId,
         title: track.title,
         artist: track.artist,
-        thumbnailUrl: track.cover || track.thumbnailUrl,
+        thumbnailUrl: track.cover || track.thumbnailUrl || track.thumbnail_url,
+        cover: track.cover || track.thumbnailUrl || track.thumbnail_url,
         duration: track.seconds || 210,
+        seconds: track.seconds || 210,
       });
       nextCount = prevCount + 1;
     }
@@ -121,12 +107,12 @@ export const useLibraryStore = create((set, get) => ({
         videoId,
         title: track.title,
         artist: track.artist,
-        thumbnailUrl: track.cover || track.thumbnailUrl,
+        thumbnailUrl: track.cover || track.thumbnailUrl || track.thumbnail_url,
         duration: track.seconds || 210,
       });
 
       // Synchronize with server count if returned
-      if (typeof res.likedSongsCount === 'number') {
+      if (typeof res?.likedSongsCount === 'number') {
         set({ likedCount: res.likedSongsCount });
       }
     } catch (err) {
@@ -153,6 +139,7 @@ export const useLibraryStore = create((set, get) => ({
       name: name.trim(),
       description,
       coverUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+      tracks: [],
       createdAt: new Date().toISOString(),
     };
 
@@ -162,10 +149,14 @@ export const useLibraryStore = create((set, get) => ({
     try {
       const res = await apiClient.library.createPlaylist(name, description);
       const serverPlaylist = res.playlist || res;
+      const normalized = {
+        ...serverPlaylist,
+        tracks: Array.isArray(serverPlaylist.tracks) ? serverPlaylist.tracks : [],
+      };
       set({
-        playlists: [serverPlaylist, ...prevPlaylists],
+        playlists: [normalized, ...prevPlaylists],
       });
-      return serverPlaylist;
+      return normalized;
     } catch (err) {
       console.error('[LibraryStore] createPlaylist failed, rolling back:', err);
       set({ playlists: prevPlaylists, error: 'Failed to create playlist' });

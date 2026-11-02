@@ -1,10 +1,9 @@
 import { create } from 'zustand';
 import { apiClient, getGuestId } from '../services/api';
 import { jamSocket } from '../services/jamSocket';
-import { JAM_ROOMS } from '../data/tracks';
 
 export const useJamStore = create((set, get) => ({
-  activeRooms: JAM_ROOMS,
+  activeRooms: [],
   currentRoom: null,
   socketConnected: false,
   loading: false,
@@ -24,12 +23,11 @@ export const useJamStore = create((set, get) => ({
   fetchActiveRooms: async () => {
     try {
       const res = await apiClient.jam.getActiveRooms();
-      const rooms = Array.isArray(res) ? res : res.rooms || [];
-      if (rooms.length > 0) {
-        set({ activeRooms: rooms, error: null });
-      }
+      const rooms = Array.isArray(res) ? res : res?.rooms || [];
+      set({ activeRooms: rooms, error: null });
     } catch (err) {
-      console.warn('[JamStore] Failed to fetch live rooms, using fallback:', err.message);
+      console.warn('[JamStore] Failed to fetch live rooms:', err.message);
+      set({ activeRooms: [], error: err.message });
     }
   },
 
@@ -54,7 +52,7 @@ export const useJamStore = create((set, get) => ({
       return roomData;
     } catch (err) {
       console.warn('[JamStore] REST Join room failed, using local room state:', err);
-      const fallback = JAM_ROOMS.find((r) => r.id === roomId) || {
+      const fallback = {
         id: roomId,
         name: 'Live Jam',
         hostId: 'host-user',

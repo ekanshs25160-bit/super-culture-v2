@@ -4,7 +4,7 @@ import { Clock, X, Search as SearchIcon } from 'lucide-react';
 import { AudioContext } from '../context/AudioContext';
 import { PageHeader, TrackRow, EmptyState, Skeleton, CoverImage } from '../components/shared';
 import TopResultCard from '../components/search/TopResultCard';
-import { TRENDING_TRACKS, LIBRARY_TRACKS } from '../data/tracks';
+import { TRENDING_TRACKS } from '../data/tracks';
 
 const RECENT_KEY = 'super_culture_recent_searches';
 const DEFAULT_RECENTS = ['Frank Ocean', 'Burial', 'Fred again..', 'Aphex Twin', 'Synthwave'];
@@ -122,8 +122,8 @@ export default function SearchView() {
 
   const topTrack = tracks[0] || null;
   const artistResults = [
-    { name: query || 'Burial', role: 'Electronic / Ambient', avatar: LIBRARY_TRACKS.fredAgain.cover },
-    { name: query ? `${query} & Friends` : 'Four Tet', role: 'Curated Selection', avatar: LIBRARY_TRACKS.tapeArchive.cover },
+    { name: query || 'Burial', role: 'Electronic / Ambient', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80' },
+    { name: 'Four Tet', role: 'Curated Selection', avatar: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=160&q=80' },
     { name: 'Kavinsky', role: 'French Electro', avatar: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=160&q=80' },
     { name: 'Massive Attack', role: 'Trip-Hop Pioneer', avatar: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=160&q=80' },
   ];

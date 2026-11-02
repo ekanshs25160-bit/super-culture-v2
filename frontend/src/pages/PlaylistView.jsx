@@ -4,7 +4,6 @@ import { Play, Shuffle, Heart } from 'lucide-react';
 import { PageHeader, TrackRow, CoverStack, EmptyState } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
-import { INITIAL_TRACK_QUEUE, TRENDING_TRACKS, LIBRARY_TRACKS } from '../data/tracks';
 
 export default function PlaylistView() {
   const { playlistId } = useParams();
@@ -14,39 +13,40 @@ export default function PlaylistView() {
   const isLikedSongs = playlistId === 'liked-songs';
   const customPlaylist = storePlaylists.find((p) => p.id === playlistId);
 
-  let title = 'Curated Playlist';
-  let description = 'Editorial sound selection curated for high-fidelity personal listening.';
-  let tracks = [...INITIAL_TRACK_QUEUE, ...TRENDING_TRACKS];
+  let title = 'Playlist';
+  let description = 'Personal playlist collection.';
+  let tracks = [];
   let covers = [];
 
   if (isLikedSongs) {
-    title = 'Liked Songs Archive';
+    title = 'Liked Songs';
     description = 'All your saved tracks, synchronized directly with your personal guest session.';
-    tracks = likedSongs.length > 0
-      ? likedSongs.map((s) => ({
-          ...s,
-          id: s.videoId || s.id,
-          videoId: s.videoId || s.id,
-          cover: s.cover || s.thumbnailUrl || s.thumbnail_url || LIBRARY_TRACKS.likedSongs.cover,
-          duration: s.durationFormatted || (typeof s.duration === 'number' ? `${Math.floor(s.duration / 60)}:${s.duration % 60 < 10 ? '0' : ''}${s.duration % 60}` : '3:45'),
-          seconds: typeof s.duration === 'number' ? s.duration : 225,
-        }))
-      : [LIBRARY_TRACKS.likedSongs];
+    tracks = likedSongs.map((s) => ({
+      ...s,
+      id: s.videoId || s.id,
+      videoId: s.videoId || s.id,
+      cover: s.cover || s.thumbnailUrl || s.thumbnail_url || '',
+      duration: s.durationFormatted || (typeof s.duration === 'number' ? `${Math.floor(s.duration / 60)}:${s.duration % 60 < 10 ? '0' : ''}${s.duration % 60}` : '3:45'),
+      seconds: typeof s.duration === 'number' ? s.duration : 225,
+    }));
     covers = tracks.map((t) => t.cover).filter(Boolean);
   } else if (customPlaylist) {
     title = customPlaylist.name || customPlaylist.title;
     description = customPlaylist.description || 'Custom playlist created on Super Culture.';
-    tracks = customPlaylist.tracks?.length > 0 ? customPlaylist.tracks : [...INITIAL_TRACK_QUEUE];
-    covers = [customPlaylist.coverUrl || LIBRARY_TRACKS.tapeArchive.cover];
+    tracks = Array.isArray(customPlaylist.tracks) ? customPlaylist.tracks : [];
+    covers = [customPlaylist.coverUrl].filter(Boolean);
   } else if (playlistId) {
     title = playlistId.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-    covers = tracks.map((t) => t.cover).filter(Boolean);
+    tracks = [];
+    covers = [];
   }
 
   const handlePlayAll = () => {
     if (tracks.length > 0) {
       playTrack(tracks[0], tracks);
       showToast(`Playing ${title}`);
+    } else {
+      showToast('No tracks in this playlist yet');
     }
   };
 
@@ -56,6 +56,8 @@ export default function PlaylistView() {
       const randomIndex = Math.floor(Math.random() * tracks.length);
       playTrack(tracks[randomIndex], tracks);
       showToast(`Shuffling ${title}`);
+    } else {
+      showToast('No tracks in this playlist yet');
     }
   };
 
@@ -115,7 +117,7 @@ export default function PlaylistView() {
       <div className="space-y-2">
         {tracks.length > 0 ? (
           tracks.map((t, idx) => (
-            <TrackRow key={t.id + idx} track={t} index={idx} queue={tracks} />
+            <TrackRow key={(t.id || t.videoId) + idx} track={t} index={idx} queue={tracks} />
           ))
         ) : (
           <EmptyState

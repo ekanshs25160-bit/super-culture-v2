@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Clock, Trash2 } from 'lucide-react';
 import { PageHeader, TrackRow, EmptyState } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
-import { INITIAL_TRACK_QUEUE } from '../data/tracks';
 
 const HISTORY_KEY = 'super_culture_playback_history';
 
@@ -11,11 +10,11 @@ export default function RecentsView() {
   const [history, setHistory] = useState(() => {
     try {
       const stored = localStorage.getItem(HISTORY_KEY);
-      const parsed = stored ? JSON.parse(stored) : INITIAL_TRACK_QUEUE.slice(0, 4);
-      return parsed;
+      const parsed = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
       console.warn('Failed to parse history:', e);
-      return INITIAL_TRACK_QUEUE.slice(0, 4);
+      return [];
     }
   });
 

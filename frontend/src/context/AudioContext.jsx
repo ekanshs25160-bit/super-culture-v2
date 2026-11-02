@@ -1,7 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useEffect, useState, useRef, useCallback } from 'react';
 import playbackPersistence from '../services/playbackPersistence';
-import { INITIAL_TRACK_QUEUE } from '../data/tracks';
 
 export const AudioContext = createContext({
   currentTrack: null,
@@ -45,14 +44,13 @@ export const AudioContext = createContext({
 export const AudioProvider = ({ children }) => {
   const initialState = playbackPersistence.load();
 
-  // If no saved track, initialize with first curated track from INITIAL_TRACK_QUEUE
-  const defaultTrack = initialState.currentTrack || INITIAL_TRACK_QUEUE[0];
-  const defaultQueue = (initialState.queue && initialState.queue.length > 0)
-    ? initialState.queue
-    : INITIAL_TRACK_QUEUE;
+  // Initial state strictly defaults to empty queue and null track
+  const defaultTrack = initialState.currentTrack || null;
+  const defaultQueue = Array.isArray(initialState.queue) ? initialState.queue : [];
 
   const [currentTrack, setCurrentTrack] = useState(defaultTrack);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(() => {
+    if (!defaultTrack || defaultQueue.length === 0) return 0;
     const idx = defaultQueue.findIndex(
       (t) => (defaultTrack?.videoId && t.videoId === defaultTrack.videoId) || t.id === defaultTrack?.id
     );
@@ -61,11 +59,11 @@ export const AudioProvider = ({ children }) => {
   const [queue, setQueue] = useState(defaultQueue);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(initialState.currentTime || 0);
-  const [duration, setDuration] = useState(defaultTrack?.seconds || 252);
+  const [duration, setDuration] = useState(defaultTrack?.seconds || 0);
   const [volume, setVolume] = useState(typeof initialState.volume === 'number' ? initialState.volume : 0.74);
   const [isShuffle, setIsShuffle] = useState(Boolean(initialState.isShuffle));
   const [isRepeat, setIsRepeat] = useState(Boolean(initialState.isRepeat));
-  const [isEmptyPlayer, setIsEmptyPlayer] = useState(false);
+  const [isEmptyPlayer, setIsEmptyPlayer] = useState(!defaultTrack);
 
   // App-level interactive state
   const [isLiked, setIsLiked] = useState(true);
@@ -207,7 +205,9 @@ export const AudioProvider = ({ children }) => {
 
     if (!currentTrack) {
       if (queue.length > 0) {
-        playSelectedTrack(queue[0]);
+        playSelectedTrack(queue[0], queue);
+      } else {
+        showToast('No track selected • Pick a song to play');
       }
       return;
     }
@@ -228,7 +228,7 @@ export const AudioProvider = ({ children }) => {
     } else {
       setIsPlaying(!isPlaying);
     }
-  }, [isEmptyPlayer, currentTrack, queue, isPlaying, playSelectedTrack]);
+  }, [isEmptyPlayer, currentTrack, queue, isPlaying, playSelectedTrack, showToast]);
 
   // Skip track forward or backward with direction (+1 or -1)
   const skipTrack = useCallback((direction = 1) => {
@@ -332,7 +332,7 @@ export const AudioProvider = ({ children }) => {
   const toggleLikeTrack = useCallback(() => {
     setIsLiked((prev) => {
       const next = !prev;
-      showToast(next ? 'Saved to Liked Songs (875)' : 'Removed from Liked Songs');
+      showToast(next ? 'Saved to Liked Songs' : 'Removed from Liked Songs');
       return next;
     });
   }, [showToast]);

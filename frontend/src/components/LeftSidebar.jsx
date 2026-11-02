@@ -1,4 +1,4 @@
-import { useEffect, useContext } from 'react';
+import { useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Home as HomeIcon,
@@ -11,20 +11,14 @@ import {
   ArrowUpRight,
   Heart,
 } from 'lucide-react';
-import { AudioContext } from '../context/AudioContext';
+import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
-import { LIBRARY_TRACKS } from '../data/tracks';
 import CoverImage from './shared/CoverImage';
 
 export default function LeftSidebar() {
-  const {
-    playTrack,
-    isPlaying,
-    showToast,
-  } = useContext(AudioContext);
+  const { showToast } = useAudio();
 
   const {
-    likedSongs,
     likedCount,
     playlists,
     createPlaylist,
@@ -56,6 +50,7 @@ export default function LeftSidebar() {
       const created = await createPlaylist(title.trim());
       if (created) {
         showToast(`Created Playlist: ${created.name || title}`);
+        navigate(`/library/${created.id}`);
       }
     }
   };
@@ -101,7 +96,6 @@ export default function LeftSidebar() {
           ))}
         </ul>
       </nav>
-      
 
       {/* CARD C: LIBRARY CARD */}
       <section className="sc-card sc-card-hover p-4 flex-1 flex flex-col min-h-0">
@@ -153,14 +147,10 @@ export default function LeftSidebar() {
             </div>
           )}
 
-          {/* Row 1: Liked Songs */}
+          {/* Row 1: Liked Songs - Navigates directly without playing audio */}
           <div
-            onClick={() => {
-              const firstLiked = likedSongs[0] || LIBRARY_TRACKS.likedSongs;
-              playTrack(firstLiked);
-              navigate('/library/liked-songs');
-            }}
-            className="group flex items-center gap-3 p-1.5 rounded-2xl hover:bg-white/[0.06] cursor-pointer transition"
+            onClick={() => navigate('/library/liked-songs')}
+            className="group flex items-center gap-3 p-1.5 rounded-2xl hover:bg-white/[0.06] cursor-pointer transition select-none"
           >
             <div className="w-10 h-10 rounded-xl bg-[#17171A] border border-white/10 flex items-center justify-center shadow-md shrink-0">
               <Heart className="w-4 h-4 text-[#1ED760] fill-current" aria-hidden="true" />
@@ -178,84 +168,26 @@ export default function LeftSidebar() {
             </div>
           </div>
 
-          {/* Row 2: Followed Artist with Animated Green Equalizer */}
-          <div
-            onClick={() => playTrack(LIBRARY_TRACKS.fredAgain)}
-            className="group flex items-center justify-between gap-3 p-1.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.1] cursor-pointer transition"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <CoverImage
-                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80"
-                alt=""
-                iconSize="w-4 h-4"
-                className="w-10 h-10 rounded-full object-cover grayscale contrast-125 shrink-0 border border-white/15"
-              />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-[#F4F4F2] truncate">Fred again..</p>
-                <p className="text-[10px] text-[#8A8A8E]">Artist</p>
+          {/* User Playlists */}
+          {playlists.map((playlist, idx) => (
+            <div
+              key={playlist.id}
+              onClick={() => navigate(`/library/${playlist.id}`)}
+              className="group flex items-center gap-3 p-1.5 rounded-2xl hover:bg-white/[0.06] cursor-pointer transition select-none"
+            >
+              <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center text-[#1ED760] shrink-0 font-mono text-[10px]">
+                {String(idx + 1).padStart(2, '0')}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-[#F4F4F2] truncate group-hover:text-[#1ED760] transition">
+                  {playlist.name || playlist.title}
+                </p>
+                <p className="text-[10px] text-[#8A8A8E] truncate">
+                  Playlist • {playlist.tracks?.length || 0} songs
+                </p>
               </div>
             </div>
-            <div className={`flex items-end gap-[2px] h-4 px-2 ${!isPlaying ? 'paused-eq' : ''}`}>
-              <span className="w-[2.5px] bg-[#1ED760] rounded-full eq-bar-1"></span>
-              <span className="w-[2.5px] bg-[#1ED760] rounded-full eq-bar-2"></span>
-              <span className="w-[2.5px] bg-[#1ED760] rounded-full eq-bar-3"></span>
-              <span className="w-[2.5px] bg-[#1ED760] rounded-full eq-bar-4"></span>
-            </div>
-          </div>
-
-          {/* Row 3: Standard Editorial Playlist */}
-          <div
-            onClick={() => {
-              playTrack(LIBRARY_TRACKS.tapeArchive);
-              navigate('/library/35mm-night-archive');
-            }}
-            className="group flex items-center gap-3 p-1.5 rounded-2xl hover:bg-white/[0.06] cursor-pointer transition"
-          >
-            <CoverImage
-              src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=200&q=80"
-              alt=""
-              iconSize="w-4 h-4"
-              className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/10"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-[#F4F4F2] truncate group-hover:text-[#1ED760] transition">
-                35mm Night Archive
-              </p>
-              <p className="text-[10px] text-[#8A8A8E] truncate">Playlist • Sora</p>
-            </div>
-          </div>
-
-          {/* User Playlists from Backend */}
-          {playlists
-            .filter((p) => p.id !== '35mm-night-archive')
-            .map((playlist, idx) => (
-              <div
-                key={playlist.id}
-                onClick={() => {
-                  playTrack({
-                    id: playlist.id,
-                    videoId: 'MV_3Dpw-BRY',
-                    title: playlist.name || playlist.title,
-                    artist: 'Personal Archive',
-                    cover: playlist.coverUrl || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-                    duration: '3:45',
-                    seconds: 225,
-                  });
-                  navigate(`/library/${playlist.id}`);
-                }}
-                className="group flex items-center gap-3 p-1.5 rounded-2xl hover:bg-white/[0.06] cursor-pointer transition"
-              >
-                <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center text-[#1ED760] shrink-0 font-mono text-[10px]">
-                  0{idx + 1}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-[#F4F4F2] truncate group-hover:text-[#1ED760] transition">
-                    {playlist.name || playlist.title}
-                  </p>
-                  <p className="text-[10px] text-[#8A8A8E] truncate">Playlist • Custom</p>
-                </div>
-              </div>
-            ))}
+          ))}
         </div>
       </section>
     </aside>

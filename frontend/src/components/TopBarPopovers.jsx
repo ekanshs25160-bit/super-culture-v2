@@ -6,17 +6,10 @@ export function NotificationsPopover() {
     <div className="sc-card p-3.5 absolute right-0 top-11 z-50 w-72 backdrop-blur-2xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.85)] rounded-2xl animate-in fade-in zoom-in-95 duration-150">
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
         <span className="meta-label text-[9px] text-[#F4F4F2]">NOTIFICATIONS</span>
-        <span className="meta-label text-[8px] text-[#1ED760]">2 UNREAD</span>
+        <span className="meta-label text-[8px] text-[#8A8A8E]">0 UNREAD</span>
       </div>
-      <div className="space-y-2 text-xs">
-        <div className="p-2 rounded-xl bg-white/5 hover:bg-white/10 transition cursor-pointer">
-          <p className="font-medium text-[#F4F4F2]">New Vinyl Archive Drop</p>
-          <p className="text-[10px] text-[#8A8A8E]">Aphex Twin • Selected Ambient Works Vol II</p>
-        </div>
-        <div className="p-2 rounded-xl bg-white/5 hover:bg-white/10 transition cursor-pointer">
-          <p className="font-medium text-[#F4F4F2]">Jam Invite from Emily</p>
-          <p className="text-[10px] text-[#8A8A8E]">Live in Shibuya Lo-Fi Room</p>
-        </div>
+      <div className="py-4 text-center">
+        <p className="text-xs text-[#8A8A8E]">No new notifications</p>
       </div>
     </div>
   );

@@ -33,7 +33,7 @@ export default function PlayerUtilities({
         <div className="min-w-0 flex-1">
           <span className="meta-label text-[8px] text-[#1ED760] block">PLAYING NEXT</span>
           <p id="next-track-title" className="text-[11px] font-medium text-[#F4F4F2] truncate">
-            {nextTrack?.title || 'Veridis Quo'}
+            {nextTrack?.title || 'No upcoming track'}
           </p>
         </div>
         <ListMusic className="w-3.5 h-3.5 text-[#8A8A8E] shrink-0" aria-hidden="true" />

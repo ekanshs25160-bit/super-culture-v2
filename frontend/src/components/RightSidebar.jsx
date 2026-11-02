@@ -12,7 +12,6 @@ export default function RightSidebar() {
   const navigate = useNavigate();
 
   const [friends, setFriends] = useState([]);
-  const [isEmptyJamState, setIsEmptyJamState] = useState(false);
   const [joinedRooms, setJoinedRooms] = useState({});
 
   useEffect(() => {
@@ -64,7 +63,7 @@ export default function RightSidebar() {
             <h3 className="text-xs font-semibold text-[#F4F4F2] tracking-tight">Friend Activity</h3>
           </div>
           <button
-            onClick={() => showToast('Friend invitations coming in next release (Mock stream active)')}
+            onClick={() => showToast('Friend invitations feature coming soon')}
             aria-label="Add friends"
             className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#8A8A8E] hover:text-white transition cursor-pointer"
           >
@@ -73,58 +72,66 @@ export default function RightSidebar() {
         </div>
 
         <div className="space-y-2.5">
-          {friends.map((friend) => (
-            <div
-              key={friend.id}
-              onClick={() => playTrack(friend.track)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') playTrack(friend.track);
-              }}
-              aria-label={`Listen to what ${friend.name} is playing: ${friend.track.title}`}
-              className="group p-2 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.04] cursor-pointer transition select-none"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <CoverImage
-                  src={friend.track.cover}
-                  alt=""
-                  iconSize="w-3.5 h-3.5"
-                  className="w-9 h-9 rounded-lg object-cover grayscale contrast-125 shrink-0"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-[#F4F4F2] truncate group-hover:text-[#1ED760] transition">
-                    {friend.track.title}
-                  </p>
-                  <p className="text-[11px] text-[#8A8A8E] truncate">{friend.track.artist}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-white/[0.05]">
-                <div className="flex items-center gap-1.5 min-w-0">
+          {friends.length > 0 ? (
+            friends.map((friend) => (
+              <div
+                key={friend.id}
+                onClick={() => playTrack(friend.track)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') playTrack(friend.track);
+                }}
+                aria-label={`Listen to what ${friend.name} is playing: ${friend.track.title}`}
+                className="group p-2 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.04] cursor-pointer transition select-none"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
                   <CoverImage
-                    src={friend.avatar}
+                    src={friend.track.cover}
                     alt=""
-                    iconSize="w-2.5 h-2.5"
-                    className="w-4 h-4 rounded-full object-cover shrink-0"
+                    iconSize="w-3.5 h-3.5"
+                    className="w-9 h-9 rounded-lg object-cover grayscale contrast-125 shrink-0"
                   />
-                  <span className="text-[11px] text-[#8A8A8E] truncate">{friend.name}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-[#F4F4F2] truncate group-hover:text-[#1ED760] transition">
+                      {friend.track.title}
+                    </p>
+                    <p className="text-[11px] text-[#8A8A8E] truncate">{friend.track.artist}</p>
+                  </div>
                 </div>
 
-                {friend.isLive ? (
-                  <div className={`flex items-end gap-[2px] h-3 px-1 ${!isPlaying ? 'paused-eq' : ''}`}>
-                    <span className="w-[2px] bg-[#1ED760] rounded-full eq-bar-1 motion-reduce:animate-none"></span>
-                    <span className="w-[2px] bg-[#1ED760] rounded-full eq-bar-2 motion-reduce:animate-none"></span>
-                    <span className="w-[2px] bg-[#1ED760] rounded-full eq-bar-3 motion-reduce:animate-none"></span>
+                <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-white/[0.05]">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <CoverImage
+                      src={friend.avatar}
+                      alt=""
+                      iconSize="w-2.5 h-2.5"
+                      className="w-4 h-4 rounded-full object-cover shrink-0"
+                    />
+                    <span className="text-[11px] text-[#8A8A8E] truncate">{friend.name}</span>
                   </div>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-white/[0.07] text-[10px] text-[#8A8A8E] font-mono">
-                    {friend.lastActive}
-                  </span>
-                )}
+
+                  {friend.isLive ? (
+                    <div className={`flex items-end gap-[2px] h-3 px-1 ${!isPlaying ? 'paused-eq' : ''}`}>
+                      <span className="w-[2px] bg-[#1ED760] rounded-full eq-bar-1 motion-reduce:animate-none"></span>
+                      <span className="w-[2px] bg-[#1ED760] rounded-full eq-bar-2 motion-reduce:animate-none"></span>
+                      <span className="w-[2px] bg-[#1ED760] rounded-full eq-bar-3 motion-reduce:animate-none"></span>
+                    </div>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-white/[0.07] text-[10px] text-[#8A8A8E] font-mono">
+                      {friend.lastActive}
+                    </span>
+                  )}
+                </div>
               </div>
+            ))
+          ) : (
+            <div className="py-5 px-3 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center">
+              <Users className="w-5 h-5 text-[#8A8A8E] mx-auto mb-1.5" aria-hidden="true" />
+              <p className="text-xs font-medium text-[#F4F4F2]">No friend activity</p>
+              <p className="text-[11px] text-[#8A8A8E] mt-0.5">Friends you follow will show their live listening activity here.</p>
             </div>
-          ))}
+          )}
         </div>
 
         {/* Footer Link */}
@@ -150,26 +157,17 @@ export default function RightSidebar() {
             />
             <h3 className="meta-label text-[#F4F4F2] font-semibold">LIVE JAM ROOMS</h3>
           </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setIsEmptyJamState((prev) => !prev)}
-              aria-label="Toggle Jam active view vs empty view"
-              className="meta-label text-[9px] px-2 py-1 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-[#8A8A8E] hover:text-white transition cursor-pointer"
-            >
-              {isEmptyJamState ? `ACTIVE (${activeRooms.length})` : 'EMPTY VIEW'}
-            </button>
-            <button
-              onClick={handleHostRoom}
-              aria-label="Host a Jam room"
-              className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-            </button>
-          </div>
+          <button
+            onClick={handleHostRoom}
+            aria-label="Host a Jam room"
+            className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
         </div>
 
-        {/* ACTIVE STATE: Active Room Rows */}
-        {!isEmptyJamState && (
+        {/* Active rooms list or empty state */}
+        {activeRooms.length > 0 ? (
           <div className="space-y-2 overflow-y-auto no-scrollbar flex-1 min-h-0">
             {activeRooms.map((room) => {
               const id = room.roomId || room.id;
@@ -211,19 +209,13 @@ export default function RightSidebar() {
               );
             })}
           </div>
-        )}
-
-        {/* EMPTY-STATE VARIANT */}
-        {isEmptyJamState && (
-          <div className="py-4 px-3 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center my-auto">
+        ) : (
+          <div className="py-6 px-3 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center my-auto">
             <Radio className="w-6 h-6 text-[#8A8A8E] mx-auto mb-2" aria-hidden="true" />
             <p className="text-xs font-medium text-[#F4F4F2]">No active Jam Rooms</p>
             <p className="text-[11px] text-[#8A8A8E] mt-0.5 mb-3">Host a synchronized audio session with peers</p>
             <button
-              onClick={() => {
-                setIsEmptyJamState(false);
-                handleHostRoom();
-              }}
+              onClick={handleHostRoom}
               aria-label="Start a new Jam room"
               className="px-3.5 py-1.5 rounded-full bg-[#1ED760] text-[#0B0B0C] text-xs font-semibold hover:bg-[#22e868] transition cursor-pointer"
             >

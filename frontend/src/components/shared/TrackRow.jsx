@@ -7,6 +7,7 @@ import CoverImage from './CoverImage';
 /**
  * Reusable TrackRow component across Search, Library, Playlist, Genre, Recents & Magic Vibe.
  * Ensures consistent design tokens, buttons with aria-labels, and optimistic like states.
+ * Event bubbling is strictly stopped on action buttons so clicking Like or Add does not trigger playback.
  */
 export default function TrackRow({
   track,
@@ -189,4 +190,3 @@ export default function TrackRow({
     </div>
   );
 }
-

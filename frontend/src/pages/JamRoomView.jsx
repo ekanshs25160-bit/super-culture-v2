@@ -4,7 +4,6 @@ import { Radio, Users, SkipForward, Plus, Disc } from 'lucide-react';
 import { PageHeader, TrackRow, EmptyState, CoverImage } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useJamStore } from '../store/useJamStore';
-import { TRENDING_TRACKS } from '../data/tracks';
 
 export default function JamRoomView() {
   const { roomId } = useParams();
@@ -56,12 +55,9 @@ export default function JamRoomView() {
   };
 
   const roomName = currentRoom?.name || (roomId ? roomId.replace(/-/g, ' ') : 'Live Jam');
-  const participants = currentRoom?.participants || [
-    { uid: 'u1', name: 'Sora Takahashi (Host)', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80' },
-    { uid: 'u2', name: 'Emily Chang', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80' },
-  ];
-  const queue = currentRoom?.queue?.length > 0 ? currentRoom.queue : TRENDING_TRACKS.slice(0, 4);
-  const nowPlaying = queue[0] || TRENDING_TRACKS[0];
+  const participants = currentRoom?.participants || [];
+  const queue = Array.isArray(currentRoom?.queue) ? currentRoom.queue : [];
+  const nowPlaying = currentRoom?.currentTrack || queue[0] || null;
 
   return (
     <div className="w-full h-full flex flex-col overflow-y-auto no-scrollbar px-2 py-1 pb-24">
@@ -86,41 +82,51 @@ export default function JamRoomView() {
       </PageHeader>
 
       {/* Hero Now Playing in Jam */}
-      <div className="sc-card p-5 mb-4 rounded-2xl flex flex-col sm:flex-row items-center gap-5">
-        <div className="relative w-28 h-28 shrink-0 rounded-2xl overflow-hidden border border-white/10 bg-black/40 shadow-xl">
-          <CoverImage src={nowPlaying.cover} alt="" iconSize="w-8 h-8" className="w-full h-full object-cover" />
-          <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-black/80 text-[8px] font-mono text-[#1ED760] flex items-center gap-1">
-            <Radio className="w-2.5 h-2.5" />
-            <span>LIVE</span>
+      {nowPlaying ? (
+        <div className="sc-card p-5 mb-4 rounded-2xl flex flex-col sm:flex-row items-center gap-5">
+          <div className="relative w-28 h-28 shrink-0 rounded-2xl overflow-hidden border border-white/10 bg-black/40 shadow-xl">
+            <CoverImage src={nowPlaying.cover} alt="" iconSize="w-8 h-8" className="w-full h-full object-cover" />
+            <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-black/80 text-[8px] font-mono text-[#1ED760] flex items-center gap-1">
+              <Radio className="w-2.5 h-2.5" />
+              <span>LIVE</span>
+            </div>
+          </div>
+
+          <div className="flex-1 text-center sm:text-left min-w-0">
+            <span className="meta-label text-[9px] text-[#1ED760] block mb-1">CURRENTLY BROADCASTING</span>
+            <h2 className="text-base sm:text-lg font-semibold text-[#F4F4F2] truncate">{nowPlaying.title}</h2>
+            <p className="text-xs text-[#8A8A8E] truncate mb-3">{nowPlaying.artist}</p>
+
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
+              <button
+                onClick={() => playTrack(nowPlaying, queue)}
+                aria-label={`Listen to ${nowPlaying.title}`}
+                className="sc-pill px-4 py-2 bg-[#1ED760] text-black font-semibold text-xs inline-flex items-center gap-2 cursor-pointer shadow-lg hover:scale-105 transition"
+              >
+                <Disc className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
+                <span>{isPlaying && currentTrack?.title === nowPlaying.title ? 'Live Synced' : 'Sync Stream'}</span>
+              </button>
+
+              <button
+                onClick={handleVoteSkip}
+                aria-label="Vote to skip current track"
+                className="sc-pill px-3 py-2 bg-white/10 hover:bg-white/20 text-[#F4F4F2] text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <SkipForward className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Vote Skip ({votes})</span>
+              </button>
+            </div>
           </div>
         </div>
-
-        <div className="flex-1 text-center sm:text-left min-w-0">
-          <span className="meta-label text-[9px] text-[#1ED760] block mb-1">CURRENTLY BROADCASTING</span>
-          <h2 className="text-base sm:text-lg font-semibold text-[#F4F4F2] truncate">{nowPlaying.title}</h2>
-          <p className="text-xs text-[#8A8A8E] truncate mb-3">{nowPlaying.artist}</p>
-
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
-            <button
-              onClick={() => playTrack(nowPlaying, queue)}
-              aria-label={`Listen to ${nowPlaying.title}`}
-              className="sc-pill px-4 py-2 bg-[#1ED760] text-black font-semibold text-xs inline-flex items-center gap-2 cursor-pointer shadow-lg hover:scale-105 transition"
-            >
-              <Disc className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
-              <span>{isPlaying && currentTrack?.title === nowPlaying.title ? 'Live Synced' : 'Sync Stream'}</span>
-            </button>
-
-            <button
-              onClick={handleVoteSkip}
-              aria-label="Vote to skip current track"
-              className="sc-pill px-3 py-2 bg-white/10 hover:bg-white/20 text-[#F4F4F2] text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <SkipForward className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Vote Skip ({votes})</span>
-            </button>
-          </div>
+      ) : (
+        <div className="sc-card p-6 mb-4 rounded-2xl flex flex-col items-center justify-center text-center">
+          <Radio className="w-8 h-8 text-[#8A8A8E] mb-2" aria-hidden="true" />
+          <h3 className="text-sm font-semibold text-[#F4F4F2]">No Track Currently Broadcasting</h3>
+          <p className="text-xs text-[#8A8A8E] mt-1 max-w-sm">
+            Add a song to the shared queue below to start streaming music in this room.
+          </p>
         </div>
-      </div>
+      )}
 
       {/* Participants List */}
       <div className="sc-card p-4 mb-4 rounded-2xl">
@@ -134,22 +140,26 @@ export default function JamRoomView() {
           <span className="meta-label text-[9px] text-[#8A8A8E]">LOW-LATENCY PEERS</span>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {participants.map((p, i) => (
-            <div
-              key={p.uid || i}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/10"
-            >
-              <CoverImage
-                src={p.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80'}
-                alt=""
-                iconSize="w-3 h-3"
-                className="w-5 h-5 rounded-full object-cover"
-              />
-              <span className="text-xs text-[#F4F4F2] font-medium">{p.name || `Listener ${i + 1}`}</span>
-            </div>
-          ))}
-        </div>
+        {participants.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {participants.map((p, i) => (
+              <div
+                key={p.uid || i}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/10"
+              >
+                <CoverImage
+                  src={p.avatar}
+                  alt=""
+                  iconSize="w-3 h-3"
+                  className="w-5 h-5 rounded-full object-cover"
+                />
+                <span className="text-xs text-[#F4F4F2] font-medium">{p.name || `Listener ${i + 1}`}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-[#8A8A8E]">You are currently the only member in this session.</p>
+        )}
       </div>
 
       {/* Shared Queue Section with Add Form */}
@@ -183,7 +193,7 @@ export default function JamRoomView() {
       <div className="space-y-2">
         {queue.length > 0 ? (
           queue.map((t, idx) => (
-            <TrackRow key={t.id + idx} track={t} index={idx} queue={queue} />
+            <TrackRow key={(t.id || t.videoId) + idx} track={t} index={idx} queue={queue} />
           ))
         ) : (
           <EmptyState

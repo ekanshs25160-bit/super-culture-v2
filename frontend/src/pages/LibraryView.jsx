@@ -4,11 +4,10 @@ import { Plus } from 'lucide-react';
 import { PageHeader, PlaylistCard, Skeleton } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
-import { LIBRARY_TRACKS, INITIAL_TRACK_QUEUE } from '../data/tracks';
 
 export default function LibraryView() {
   const navigate = useNavigate();
-  const { playTrack } = useAudio();
+  const { playTrack, showToast } = useAudio();
   const { likedCount, playlists: storePlaylists, likedSongs, loading, createPlaylist } = useLibraryStore();
 
   const handleCreateNew = async () => {
@@ -17,69 +16,45 @@ export default function LibraryView() {
     if (name && name.trim()) {
       const created = await createPlaylist(name.trim());
       if (created) {
+        showToast(`Created Playlist: ${created.name || name}`);
         navigate(`/library/${created.id}`);
       }
     }
   };
 
-  const customPlaylists = storePlaylists
-    .filter((p) => p.id !== '35mm-night-archive')
-    .map((p) => ({
-      id: p.id,
-      title: p.name || p.title,
-      subtitle: p.description || 'Playlist • Custom Archive',
-      cover: p.coverUrl || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-      tag: 'USER VAULT',
-      track: {
-        id: p.id,
-        videoId: 'MV_3Dpw-BRY',
-        title: p.name || p.title,
-        artist: 'Personal Archive',
-        cover: p.coverUrl || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-        duration: '3:45',
-        seconds: 225,
-      },
-      tracks: p.tracks?.length > 0 ? p.tracks : [{
-        id: p.id,
-        videoId: 'MV_3Dpw-BRY',
-        title: p.name || p.title,
-        artist: 'Personal Archive',
-        cover: p.coverUrl || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-        duration: '3:45',
-        seconds: 225,
-      }],
-    }));
+  const userPlaylists = storePlaylists.map((p) => ({
+    id: p.id,
+    title: p.name || p.title,
+    subtitle: p.description || `${p.tracks?.length || 0} tracks`,
+    cover: p.coverUrl || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+    tag: 'PLAYLIST',
+    track: p.tracks?.[0] || null,
+    tracks: p.tracks || [],
+  }));
 
   const allPlaylists = [
     {
       id: 'liked-songs',
       title: 'Liked Songs Archive',
-      subtitle: `${likedCount} Curated Tracks`,
-      cover: likedSongs[0]?.cover || likedSongs[0]?.thumbnailUrl || LIBRARY_TRACKS.likedSongs.cover,
-      tag: 'PINNED PLAYLIST',
-      track: likedSongs[0] || LIBRARY_TRACKS.likedSongs,
-      tracks: likedSongs.length > 0 ? likedSongs : [LIBRARY_TRACKS.likedSongs],
+      subtitle: `${likedCount} Saved Tracks`,
+      cover: likedSongs[0]?.cover || likedSongs[0]?.thumbnailUrl,
+      tag: 'PINNED VAULT',
+      track: likedSongs[0] || null,
+      tracks: likedSongs,
     },
-    {
-      id: '35mm-night-archive',
-      title: '35mm Night Archive',
-      subtitle: 'Playlist • Sora • 42 tracks',
-      cover: LIBRARY_TRACKS.tapeArchive.cover,
-      tag: 'EDITORIAL',
-      track: LIBRARY_TRACKS.tapeArchive,
-      tracks: [LIBRARY_TRACKS.tapeArchive, ...INITIAL_TRACK_QUEUE],
-    },
-    {
-      id: 'tokyo-electronic',
-      title: 'Tokyo Minimal Synthetics',
-      subtitle: 'Playlist • 28 tracks',
-      cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=300&q=80',
-      tag: 'CURATED',
-      track: INITIAL_TRACK_QUEUE[0],
-      tracks: INITIAL_TRACK_QUEUE,
-    },
-    ...customPlaylists,
+    ...userPlaylists,
   ];
+
+  const handlePlayCard = (pl) => {
+    if (pl.tracks && pl.tracks.length > 0) {
+      playTrack(pl.tracks[0], pl.tracks);
+    } else if (pl.track) {
+      playTrack(pl.track);
+    } else {
+      showToast('No tracks in this playlist yet');
+      navigate(`/library/${pl.id}`);
+    }
+  };
 
   return (
     <div className="w-full h-full flex flex-col overflow-y-auto no-scrollbar px-2 py-1 pb-24">
@@ -111,7 +86,7 @@ export default function LibraryView() {
               tag={pl.tag}
               isLikedSongs={pl.id === 'liked-songs'}
               onClick={() => navigate(`/library/${pl.id}`)}
-              onPlay={() => playTrack(pl.track, pl.tracks || [pl.track])}
+              onPlay={() => handlePlayCard(pl)}
             />
           ))}
         </div>
