@@ -6,6 +6,7 @@ import userRoutes from './userRoutes.js';
 
 const apiRouter = Router();
 
+apiRouter.use('/music', musicRoutes);
 apiRouter.use('/yt', musicRoutes);
 apiRouter.use('/ai', aiRoutes);
 apiRouter.use('/jam', jamRoutes);

@@ -2,10 +2,23 @@ import { Innertube, UniversalCache } from 'youtubei.js';
 import { LRUCache } from 'lru-cache';
 import { TrackMeta, StreamEntry } from '../types/index.js';
 
+let yt: Innertube;
+
+export const initYouTube = async (): Promise<Innertube> => {
+  if (!yt) {
+    yt = await Innertube.create({
+      cache: new UniversalCache(false),
+      generate_session_locally: true,
+      // CRITICAL: Force the client to YouTube Music to avoid standard YT 403 blocks
+      client_type: 'WEB_REMIX' as any,
+    });
+    console.log('[YouTubeService] Innertube client initialized with WEB_REMIX.');
+  }
+  return yt;
+};
+
 export class YouTubeService {
-  private yt: Innertube | null = null;
   private streamCache: LRUCache<string, StreamEntry>;
-  private isInitializing = false;
 
   constructor() {
     // 4 hours TTL LRU cache matching PRD spec
@@ -19,30 +32,7 @@ export class YouTubeService {
    * Lazy-initialize YouTube.js client
    */
   public async getClient(): Promise<Innertube> {
-    if (this.yt) return this.yt;
-
-    if (!this.isInitializing) {
-      this.isInitializing = true;
-      try {
-        this.yt = await Innertube.create({
-          cache: new UniversalCache(false),
-          generate_session_locally: true,
-        });
-        console.log('[YouTubeService] Innertube client initialized.');
-      } finally {
-        this.isInitializing = false;
-      }
-    } else {
-      while (this.isInitializing) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-    }
-
-    if (!this.yt) {
-      throw new Error('Failed to initialize YouTube client');
-    }
-
-    return this.yt;
+    return initYouTube();
   }
 
   /**
@@ -56,21 +46,36 @@ export class YouTubeService {
   /**
    * Search tracks via YouTube Music
    */
-  public async searchTracks(query: string): Promise<TrackMeta[]> {
-    const yt = await this.getClient();
-    const results = await yt.music.search(query, { type: 'song' });
+  public async searchTracks(query: string, limit: number = 40): Promise<TrackMeta[]> {
+    const client = await this.getClient();
+    const results = await client.music.search(query, { type: 'song' });
+
+    const rawItems: any[] = [...(results.songs?.contents || (results.contents?.[0] as any)?.contents || results.contents || [])];
+
+    let currentContinuation: any = results;
+    while (rawItems.length < limit && currentContinuation?.has_continuation && typeof currentContinuation.getContinuation === 'function') {
+      try {
+        const nextContinuation = await currentContinuation.getContinuation();
+        const nextItems = nextContinuation.contents?.contents || nextContinuation.songs?.contents || nextContinuation.contents || [];
+        if (!nextItems.length) break;
+        rawItems.push(...nextItems);
+        currentContinuation = nextContinuation;
+      } catch (err) {
+        console.warn('[YouTubeService] Error fetching search continuation:', err);
+        break;
+      }
+    }
 
     const tracks: TrackMeta[] = [];
-    const contents = results.contents || [];
-
-    for (const item of contents) {
-      // Extract track metadata safely from Innertube response
+    for (const item of rawItems) {
+      if (!item) continue;
       const song = item as any;
-      if (!song.id) continue;
+      const id = song.id || song.videoId;
+      if (!id) continue;
 
       const rawThumb = song.thumbnails?.[0]?.url || song.thumbnail?.contents?.[0]?.url;
       tracks.push({
-        videoId: song.id,
+        videoId: id,
         title: song.title?.text || song.title || 'Unknown Title',
         artist: song.artists?.[0]?.name || song.author?.name || 'Unknown Artist',
         duration: song.duration?.seconds,
@@ -78,6 +83,8 @@ export class YouTubeService {
         thumbnailUrl: this.upscaleThumbnail(rawThumb),
         album: song.album?.name,
       });
+
+      if (tracks.length >= limit) break;
     }
 
     return tracks;
@@ -92,19 +99,19 @@ export class YouTubeService {
       return cached;
     }
 
-    const yt = await this.getClient();
-    const info = await yt.music.getInfo(videoId);
+    const client = await this.getClient();
+    const info = await client.music.getInfo(videoId);
 
     const format = info.chooseFormat({
       type: 'audio',
       quality: 'best',
     });
 
-    if (!format || !format.decipher(yt.session.player)) {
+    if (!format || !format.decipher(client.session.player)) {
       throw new Error(`Unable to decipher audio format for video ${videoId}`);
     }
 
-    const streamUrl = format.decipher(yt.session.player);
+    const streamUrl = format.decipher(client.session.player);
     const entry: StreamEntry = {
       videoId,
       url: streamUrl,
@@ -121,8 +128,8 @@ export class YouTubeService {
    * Fetch Watch Next / Radio playlist for "PLAYING NEXT" pill
    */
   public async getUpNext(videoId: string): Promise<TrackMeta[]> {
-    const yt = await this.getClient();
-    const upNext = await yt.music.getUpNext(videoId);
+    const client = await this.getClient();
+    const upNext = await client.music.getUpNext(videoId);
 
     const tracks: TrackMeta[] = [];
     const contents = upNext.contents || [];

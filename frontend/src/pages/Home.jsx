@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/layout/Sidebar";
 import {
@@ -8,7 +8,6 @@ import {
   Plus,
   Sparkles,
 } from "lucide-react";
-import { UserContext } from "../context/UserContext";
 import { apiClient } from "../services/apiClient";
 import { useJam } from "../context/JamContext";
 
@@ -16,7 +15,6 @@ import { useJam } from "../context/JamContext";
 export default function Home() {
   const navigate = useNavigate();
   const { createRoom, currentRoom, leaveRoom } = useJam();
-  const { isLiked } = useContext(UserContext);
 
   const isPublicJam = currentRoom && !currentRoom.isPrivate;
   const isPrivateJam = currentRoom && currentRoom.isPrivate;

@@ -11,13 +11,14 @@ export class MusicController {
   public async search(req: Request, res: Response): Promise<void> {
     try {
       const q = req.query.q as string;
+      const limit = Number(req.query.limit) || 40;
       if (!q || !q.trim()) {
         res.status(400).json({ error: 'Search query parameter "q" is required' });
         return;
       }
 
-      const results = await ytService.searchTracks(q);
-      res.json({ results });
+      const results = await ytService.searchTracks(q, limit);
+      res.json(results);
     } catch (error: any) {
       console.error('[MusicController] Search error:', error);
       res.status(500).json({ error: 'Failed to search tracks', details: error.message });

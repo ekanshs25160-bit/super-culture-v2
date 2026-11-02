@@ -1,3 +1,4 @@
+import { useLocation, Routes, Route } from 'react-router-dom';
 import { AudioProvider } from './context/AudioContext';
 import YouTubePlayer from './components/YouTubePlayer';
 import EditorialBackground from './components/EditorialBackground';
@@ -6,8 +7,12 @@ import LeftSidebar from './components/LeftSidebar';
 import RightSidebar from './components/RightSidebar';
 import BottomDiscoveryRow from './components/BottomDiscoveryRow';
 import PlayerBar from './components/PlayerBar';
+import GenreView from './pages/GenreView';
 
 export default function App() {
+  const location = useLocation();
+  const isHome = location.pathname === '/';
+
   return (
     <AudioProvider>
       {/* Headless 1×1px offscreen YouTube IFrame */}
@@ -25,22 +30,36 @@ export default function App() {
         <TopBar />
 
         {/* Middle Spatial Workspace: Left Column | Open Center Hero | Right Column */}
-        <main className="relative z-20 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 px-5 pt-1 pb-2 items-start pointer-events-none">
+        <main className="relative z-20 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 px-5 pt-1 pb-2 items-start pointer-events-none min-h-0 overflow-hidden">
           {/* 2. Left Column */}
           <LeftSidebar />
 
-          {/* Center Open Canvas (Leaves "Super culture" Wordmark & Photo completely unobstructed) */}
-          <div className="hidden lg:flex lg:col-span-6 h-full flex-col justify-end items-center pb-2 pointer-events-none" />
+          {/* Center Canvas */}
+          <div
+            className={`lg:col-span-6 h-full flex flex-col ${
+              isHome ? 'justify-end items-center' : 'justify-start'
+            } pb-2 pointer-events-auto min-h-0 overflow-hidden w-full`}
+          >
+            <Routes>
+              <Route
+                path="/"
+                element={<div className="hidden lg:flex flex-1 pointer-events-none" />}
+              />
+              <Route path="/genre/:genreId" element={<GenreView />} />
+            </Routes>
+          </div>
 
           {/* 3. Right Column */}
           <RightSidebar />
         </main>
 
-        {/* 4. Center-Bottom Row (Floating Above Player) */}
-        <BottomDiscoveryRow />
+        {/* 4. Center-Bottom Row (Floating Above Player, only on Home) */}
+        {isHome && <BottomDiscoveryRow />}
 
         {/* Spacer to prevent discovery row from being obscured by fixed PlayerBar */}
-        <div className="h-24 md:h-20 shrink-0 pointer-events-none" aria-hidden="true" />
+        {isHome && (
+          <div className="h-24 md:h-20 shrink-0 pointer-events-none" aria-hidden="true" />
+        )}
 
         {/* 5. Fixed Audio Player Bar at bottom */}
         <PlayerBar />
@@ -48,4 +67,3 @@ export default function App() {
     </AudioProvider>
   );
 }
-

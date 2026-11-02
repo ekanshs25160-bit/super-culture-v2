@@ -3,7 +3,10 @@ import { musicController } from '../controllers/musicController.js';
 
 const router = Router();
 
-router.get('/search', (req, res) => musicController.search(req, res));
+const searchTracks = (req: any, res: any) => musicController.search(req, res);
+
+// Remove authMiddleware so the search is publicly accessible
+router.get('/search', searchTracks);
 router.get('/stream/:videoId', (req, res) => musicController.stream(req, res));
 router.get('/up-next/:videoId', (req, res) => musicController.getUpNext(req, res));
 router.get('/home-shelves', (req, res) => musicController.getHomeShelves(req, res));

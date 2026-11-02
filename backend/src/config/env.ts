@@ -19,7 +19,7 @@ export interface AppConfig {
 }
 
 export const env: AppConfig = {
-  port: Number(process.env.PORT) || 4000,
+  port: Number(process.env.PORT) || 5001,
   host: process.env.HOST || '0.0.0.0',
   corsOrigin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
   geminiApiKey: process.env.GEMINI_API_KEY,

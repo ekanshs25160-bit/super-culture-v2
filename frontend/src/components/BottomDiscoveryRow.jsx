@@ -1,4 +1,5 @@
 import { useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AudioContext } from '../context/AudioContext';
 import {
   TRENDING_TRACKS,
@@ -8,6 +9,11 @@ import {
 
 export default function BottomDiscoveryRow() {
   const { playTrack, showToast } = useContext(AudioContext);
+  const navigate = useNavigate();
+
+  const openGenre = (slug, title, query, meta) => {
+    navigate('/genre/' + slug, { state: { title, query, meta } });
+  };
 
   return (
     <section className="relative z-20 px-5 pb-2.5">
@@ -66,7 +72,14 @@ export default function BottomDiscoveryRow() {
 
         {/* 1. Chill Vibes */}
         <div
-          onClick={() => playTrack(GENRE_STACKS.chillVibes)}
+          onClick={() =>
+            openGenre(
+              'chill-vibes',
+              'Chill Vibes',
+              'Lo-Fi Beats Ambient',
+              'CURATED • 42 TRACKS'
+            )
+          }
           className="sc-card sc-card-hover group p-4 w-[185px] shrink-0 flex flex-col justify-between cursor-pointer relative overflow-hidden"
         >
           <div>
@@ -105,7 +118,14 @@ export default function BottomDiscoveryRow() {
 
         {/* 2. Hip Hop Essentials */}
         <div
-          onClick={() => playTrack(GENRE_STACKS.hipHopEssentials)}
+          onClick={() =>
+            openGenre(
+              'hip-hop-essentials',
+              'Hip Hop Essentials',
+              'Top Hip Hop Songs',
+              'ARCHIVE • 64 TRACKS'
+            )
+          }
           className="sc-card sc-card-hover group p-4 w-[185px] shrink-0 flex flex-col justify-between cursor-pointer relative overflow-hidden"
         >
           <div>
@@ -144,7 +164,14 @@ export default function BottomDiscoveryRow() {
 
         {/* 3. Late Night Drive */}
         <div
-          onClick={() => playTrack(GENRE_STACKS.lateNightDrive)}
+          onClick={() =>
+            openGenre(
+              'late-night-drive',
+              'Late Night Drive',
+              'Synthwave and Midnight Pop',
+              'SYNTH • 38 TRACKS'
+            )
+          }
           className="sc-card sc-card-hover group p-4 w-[185px] shrink-0 flex flex-col justify-between cursor-pointer relative overflow-hidden"
         >
           <div>
@@ -183,7 +210,14 @@ export default function BottomDiscoveryRow() {
 
         {/* MODULE C: WHITE HIGHLIGHT CARD ("Made for you") */}
         <div
-          onClick={() => playTrack(MADE_FOR_YOU_TRACK)}
+          onClick={() =>
+            openGenre(
+              'made-for-you',
+              'Made for you',
+              'Super Culture Select',
+              '50 TRACKS • PERSONALIZED'
+            )
+          }
           className="sc-card-white group p-4 w-[265px] shrink-0 flex flex-col justify-between cursor-pointer"
         >
           <div className="flex items-center justify-between">
@@ -222,6 +256,10 @@ export default function BottomDiscoveryRow() {
           <div className="flex items-center justify-between pt-1 border-t border-black/10">
             <span className="meta-label text-[9px] text-[#0B0B0C]/60">50 TRACKS • PERSONALIZED</span>
             <button
+              onClick={(e) => {
+                e.stopPropagation();
+                playTrack(MADE_FOR_YOU_TRACK);
+              }}
               className="w-9 h-9 rounded-full bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] flex items-center justify-center shadow-[0_6px_18px_rgba(30,215,96,0.45)] group-hover:scale-105 transition cursor-pointer"
               title="Play Daily Mix"
             >
@@ -235,4 +273,3 @@ export default function BottomDiscoveryRow() {
     </section>
   );
 }
-
