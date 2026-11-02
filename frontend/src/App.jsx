@@ -8,6 +8,7 @@ import TopBar from './components/TopBar';
 import LeftSidebar from './components/LeftSidebar';
 import RightSidebar from './components/RightSidebar';
 import PlayerBar from './components/PlayerBar';
+import { AddToPlaylistModal } from './components/shared';
 
 // Page Views
 import Home from './pages/Home';
@@ -21,6 +22,7 @@ import PlaylistView from './pages/PlaylistView';
 import GenreView from './pages/GenreView';
 import JamRoomView from './pages/JamRoomView';
 import SettingsView from './pages/SettingsView';
+import ArtistView from './pages/ArtistView';
 
 /**
  * Main App Layout Shell:
@@ -86,6 +88,9 @@ function AppLayout() {
 
       {/* 4. Fixed Audio Player Bar at bottom */}
       <PlayerBar />
+
+      {/* 5. Global Add to Playlist Modal */}
+      <AddToPlaylistModal />
     </div>
   );
 }
@@ -100,6 +105,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<SearchView />} />
+          <Route path="/artist/:artistName" element={<ArtistView />} />
           <Route path="/magic-vibe" element={<MagicVibeView />} />
           <Route path="/recents" element={<RecentsView />} />
           <Route path="/followed" element={<FollowedView />} />

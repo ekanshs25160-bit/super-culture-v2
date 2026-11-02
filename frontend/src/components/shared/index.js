@@ -6,4 +6,4 @@ export { default as EmptyState } from './EmptyState';
 export { default as Skeleton } from './Skeleton';
 export { default as Wordmark } from '../Wordmark';
 export { default as CoverImage } from './CoverImage';
-
+export { default as AddToPlaylistModal } from './AddToPlaylistModal';

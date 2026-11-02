@@ -7,6 +7,7 @@ export const useUiStore = create((set) => ({
   isNotificationsOpen: false,
   isSettingsOpen: false,
   isAiDjLive: false,
+  addToPlaylistTrack: null,
 
   showToast: (message, duration = 3000) => {
     if (toastTimer) clearTimeout(toastTimer);
@@ -17,6 +18,9 @@ export const useUiStore = create((set) => ({
     }, duration);
   },
 
+  openAddToPlaylist: (track) => set({ addToPlaylistTrack: track }),
+  closeAddToPlaylist: () => set({ addToPlaylistTrack: null }),
+
   setNotificationsOpen: (open) => set({ isNotificationsOpen: open }),
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
   toggleNotifications: () => set((state) => ({ isNotificationsOpen: !state.isNotificationsOpen, isSettingsOpen: false })),
@@ -26,4 +30,3 @@ export const useUiStore = create((set) => ({
   setAiDjLive: (isLive) => set({ isAiDjLive: isLive }),
   toggleAiDj: () => set((state) => ({ isAiDjLive: !state.isAiDjLive })),
 }));
-

@@ -1,7 +1,9 @@
 import { useContext, useRef, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Heart, Plus } from 'lucide-react';
 import { AudioContext } from '../context/AudioContext';
 import { useLibraryStore } from '../store/useLibraryStore';
+import { useUiStore } from '../store/useUiStore';
 import { useJamStore } from '../store/useJamStore';
 import { apiClient } from '../services/api';
 import PlayerTransport from './player/PlayerTransport';
@@ -40,6 +42,8 @@ export default function PlayerBar() {
 
   const isLiked = useLibraryStore((s) => s.isLiked(currentTrack?.videoId || currentTrack?.id));
   const toggleLike = useLibraryStore((s) => s.toggleLike);
+  const openAddToPlaylist = useUiStore((s) => s.openAddToPlaylist);
+  const navigate = useNavigate();
 
   const currentRoom = useJamStore((s) => s.currentRoom);
   const broadcastPlay = useJamStore((s) => s.broadcastPlay);
@@ -187,7 +191,16 @@ export default function PlayerBar() {
                     <p id="player-title" className="text-xs sm:text-sm font-semibold text-[#F4F4F2] truncate">
                       {currentTrack.title}
                     </p>
-                    <p id="player-artist" className="text-xs text-[#8A8A8E] truncate">
+                    <p
+                      id="player-artist"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (currentTrack.artist) {
+                          navigate(`/artist/${encodeURIComponent(currentTrack.artist)}`);
+                        }
+                      }}
+                      className="text-xs text-[#8A8A8E] truncate hover:underline hover:text-[#1ED760] transition cursor-pointer"
+                    >
                       {currentTrack.artist}
                     </p>
                   </div>
@@ -206,7 +219,10 @@ export default function PlayerBar() {
                   </button>
 
                   <button
-                    onClick={() => showToast(`Added "${currentTrack.title}" to queue`)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openAddToPlaylist(currentTrack);
+                    }}
                     aria-label="Add track to playlist"
                     className="w-8 h-8 rounded-full bg-black/85 hover:bg-black/95 border border-white/14 hover:border-white/28 flex items-center justify-center text-[#8A8A8E] hover:text-white transition shrink-0 cursor-pointer"
                   >

@@ -8,7 +8,7 @@ import { useLibraryStore } from '../store/useLibraryStore';
 export default function PlaylistView() {
   const { playlistId } = useParams();
   const { playTrack, toggleShuffle, showToast } = useAudio();
-  const { likedSongs, playlists: storePlaylists } = useLibraryStore();
+  const { likedSongs, playlists: storePlaylists, removeTrackFromPlaylist } = useLibraryStore();
 
   const isLikedSongs = playlistId === 'liked-songs';
   const customPlaylist = storePlaylists.find((p) => p.id === playlistId);
@@ -61,6 +61,14 @@ export default function PlaylistView() {
     }
   };
 
+  const handleRemoveTrack = (track) => {
+    if (!customPlaylist) return;
+    const res = removeTrackFromPlaylist(customPlaylist.id, track.videoId || track.id);
+    if (res.removed) {
+      showToast(`Removed "${track.title}" from ${res.playlistName}`);
+    }
+  };
+
   return (
     <div className="w-full h-full flex flex-col overflow-y-auto no-scrollbar px-2 py-1 pb-24">
       <PageHeader
@@ -94,8 +102,9 @@ export default function PlaylistView() {
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
             <button
               onClick={handlePlayAll}
+              disabled={tracks.length === 0}
               aria-label={`Play all tracks in ${title}`}
-              className="sc-pill px-4 py-2 bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] font-semibold text-xs flex items-center gap-2 transition cursor-pointer"
+              className="sc-pill px-4 py-2 bg-[#1ED760] hover:bg-[#22e868] disabled:opacity-40 text-[#0B0B0C] font-semibold text-xs flex items-center gap-2 transition cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-current ml-0.5" aria-hidden="true" />
               <span>Play All</span>
@@ -103,8 +112,9 @@ export default function PlaylistView() {
 
             <button
               onClick={handleShufflePlay}
+              disabled={tracks.length === 0}
               aria-label={`Shuffle play ${title}`}
-              className="sc-pill px-4 py-2 bg-white/10 hover:bg-white/20 text-[#F4F4F2] text-xs font-medium flex items-center gap-2 transition cursor-pointer"
+              className="sc-pill px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 text-[#F4F4F2] text-xs font-medium flex items-center gap-2 transition cursor-pointer"
             >
               <Shuffle className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Shuffle</span>
@@ -117,7 +127,14 @@ export default function PlaylistView() {
       <div className="space-y-2">
         {tracks.length > 0 ? (
           tracks.map((t, idx) => (
-            <TrackRow key={(t.id || t.videoId) + idx} track={t} index={idx} queue={tracks} />
+            <TrackRow
+              key={(t.id || t.videoId) + idx}
+              track={t}
+              index={idx}
+              queue={tracks}
+              showRemove={Boolean(customPlaylist)}
+              onRemove={handleRemoveTrack}
+            />
           ))
         ) : (
           <EmptyState

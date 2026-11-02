@@ -7,15 +7,31 @@ export type UserPrivacyMode = 'public' | 'private';
 export type MoodType = 'energetic' | 'chill' | 'melancholy' | 'focus';
 
 export interface TrackMeta {
+  id?: string;
   videoId: string;
   title: string;
   artist: string;
+  cover?: string;
   duration?: number;
   durationFormatted?: string;
   thumbnailUrl: string;
   album?: string;
   addedBy?: string;
   addedAt?: string;
+}
+
+export interface ArtistMeta {
+  id: string;
+  name: string;
+  subscribers?: string;
+  avatar: string;
+  role?: string;
+}
+
+export interface SearchResultPayload {
+  artists: ArtistMeta[];
+  tracks: TrackMeta[];
+  results: TrackMeta[];
 }
 
 export interface StreamEntry {

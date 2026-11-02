@@ -21,6 +21,7 @@ export default function LeftSidebar() {
   const {
     likedCount,
     playlists,
+    followedArtists,
     createPlaylist,
     fetchLibraryOverview,
     loading,
@@ -188,6 +189,33 @@ export default function LeftSidebar() {
               </div>
             </div>
           ))}
+
+          {/* Followed Artists */}
+          {followedArtists?.length > 0 && (
+            <div className="pt-2 border-t border-white/5 space-y-1">
+              <span className="meta-label text-[9px] text-[#8A8A8E] block px-1">FOLLOWED ARTISTS</span>
+              {followedArtists.slice(0, 5).map((artist) => (
+                <div
+                  key={artist.id || artist.name}
+                  onClick={() => navigate(`/artist/${encodeURIComponent(artist.name)}`)}
+                  className="group flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/[0.06] cursor-pointer transition select-none"
+                >
+                  <CoverImage
+                    src={artist.avatar}
+                    alt=""
+                    iconSize="w-3.5 h-3.5"
+                    className="w-7 h-7 rounded-full object-cover shrink-0 border border-white/10"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-[#F4F4F2] truncate group-hover:text-[#1ED760] transition">
+                      {artist.name}
+                    </p>
+                    <p className="text-[10px] text-[#8A8A8E] truncate">Artist</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
     </aside>

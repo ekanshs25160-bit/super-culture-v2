@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
-import { ytService } from '../services/ytService.js';
+import { ytService, getArtistDiscography } from '../services/ytService.js';
 import { TrackMeta } from '../types/index.js';
 
 export class MusicController {
   /**
    * Search songs and music tracks
-   * GET /api/yt/search?q={query}
+   * GET /api/music/search?q={query}
    */
   public async search(req: Request, res: Response): Promise<void> {
     try {
@@ -17,11 +17,31 @@ export class MusicController {
         return;
       }
 
-      const results = await ytService.searchTracks(q, limit);
+      const results = await ytService.search(q, limit);
       res.json(results);
     } catch (error: any) {
       console.error('[MusicController] Search error:', error);
       res.status(500).json({ error: 'Failed to search tracks', details: error.message });
+    }
+  }
+
+  /**
+   * Fetch artist official discography
+   * GET /api/music/artist/:name
+   */
+  public async getArtist(req: Request, res: Response): Promise<void> {
+    try {
+      const name = decodeURIComponent(req.params.name || '').trim();
+      if (!name) {
+        res.status(400).json({ error: 'Artist name parameter is required' });
+        return;
+      }
+
+      const tracks = await getArtistDiscography(name);
+      res.json(tracks);
+    } catch (error: any) {
+      console.error('[MusicController] getArtist error:', error);
+      res.status(500).json({ error: 'Failed to fetch artist discography', details: error.message });
     }
   }
 
@@ -252,3 +272,4 @@ export class MusicController {
 }
 
 export const musicController = new MusicController();
+export const getArtist = (req: Request, res: Response) => musicController.getArtist(req, res);

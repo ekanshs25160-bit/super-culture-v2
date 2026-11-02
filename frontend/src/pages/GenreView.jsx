@@ -217,7 +217,7 @@ export default function GenreView() {
 
       {/* Pagination Controls */}
       {!loading && totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3.5 pt-4 pb-2">
+        <div className="flex items-center justify-center gap-3.5 pt-4 pb-36">
           <button
             onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
             disabled={currentPage === 1}
@@ -237,6 +237,7 @@ export default function GenreView() {
           </button>
         </div>
       )}
+      {!loading && totalPages <= 1 && <div className="h-32 w-full shrink-0" aria-hidden="true" />}
     </div>
   );
 }

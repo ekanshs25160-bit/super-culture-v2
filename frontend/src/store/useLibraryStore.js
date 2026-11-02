@@ -1,26 +1,25 @@
 import { create } from 'zustand';
 import { apiClient } from '../services/api';
-
-const MOODS_LIST = [
-  { index: 0, name: 'Energetic' },
-  { index: 1, name: 'Chill' },
-  { index: 2, name: 'Melancholic' },
-  { index: 3, name: 'Focused' },
-];
+import {
+  MOODS_LIST,
+  normalizeTrack,
+  loadSavedTracks,
+  persistTracks,
+  loadFollowedArtists,
+  saveFollowedArtists,
+} from './libraryHelpers';
 
 export const useLibraryStore = create((set, get) => ({
   likedSongs: [],
   likedSongIds: new Set(),
   likedCount: 0,
   playlists: [],
+  followedArtists: loadFollowedArtists(),
   mood: MOODS_LIST[0],
   mode: 'public',
   loading: false,
   error: null,
 
-  /**
-   * Check if a given video ID or track ID is liked in the active library
-   */
   isLiked: (videoId) => {
     if (!videoId) return false;
     return (
@@ -29,9 +28,6 @@ export const useLibraryStore = create((set, get) => ({
     );
   },
 
-  /**
-   * Fetch initial library overview from backend
-   */
   fetchLibraryOverview: async () => {
     set({ loading: true, error: null });
     try {
@@ -44,11 +40,27 @@ export const useLibraryStore = create((set, get) => ({
         if (found) activeMood = found;
       }
 
+      const serverPlaylists = Array.isArray(data.playlists) ? data.playlists : [];
+      const mergedPlaylists = serverPlaylists.map((p) => {
+        const localTracks = loadSavedTracks(p.id);
+        return {
+          ...p,
+          tracks: Array.isArray(p.tracks) && p.tracks.length > 0 ? p.tracks : localTracks,
+        };
+      });
+
+      const currentList = get().playlists;
+      for (const cur of currentList) {
+        if (!mergedPlaylists.some((p) => p.id === cur.id)) {
+          mergedPlaylists.push(cur);
+        }
+      }
+
       set({
         likedSongs: Array.isArray(data.likedSongs) ? data.likedSongs : [],
         likedSongIds: serverLikedIds,
         likedCount: data.likedSongs?.length ?? 0,
-        playlists: Array.isArray(data.playlists) ? data.playlists : [],
+        playlists: mergedPlaylists,
         mood: activeMood,
         mode: data.user?.mode || 'public',
         loading: false,
@@ -59,9 +71,6 @@ export const useLibraryStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Toggle like with optimistic update & error rollback
-   */
   toggleLike: async (track) => {
     if (!track) return;
     const videoId = track.videoId || track.id;
@@ -76,7 +85,6 @@ export const useLibraryStore = create((set, get) => ({
     let nextLikedSongs = [...prevLikedSongs];
     let nextCount;
 
-    // Optimistic mutation
     if (wasLiked) {
       nextLikedIds.delete(videoId);
       nextLikedSongs = nextLikedSongs.filter((s) => (s.videoId || s.id) !== videoId);
@@ -111,13 +119,11 @@ export const useLibraryStore = create((set, get) => ({
         duration: track.seconds || 210,
       });
 
-      // Synchronize with server count if returned
       if (typeof res?.likedSongsCount === 'number') {
         set({ likedCount: res.likedSongsCount });
       }
     } catch (err) {
       console.error('[LibraryStore] toggleLike failed, rolling back:', err);
-      // Rollback on failure
       set({
         likedSongIds: prevLikedIds,
         likedSongs: prevLikedSongs,
@@ -127,9 +133,6 @@ export const useLibraryStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Create custom playlist with optimistic update & rollback
-   */
   createPlaylist: async (name, description = '') => {
     if (!name?.trim()) return null;
 
@@ -164,32 +167,124 @@ export const useLibraryStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Update mood with optimistic update
-   */
+  addTrackToPlaylist: (playlistId, track) => {
+    if (!playlistId || !track) return { added: false, reason: 'invalid_args' };
+    const normalized = normalizeTrack(track);
+    if (!normalized?.videoId) return { added: false, reason: 'invalid_track' };
+
+    const playlists = get().playlists;
+    const target = playlists.find((p) => p.id === playlistId);
+    if (!target) return { added: false, reason: 'not_found' };
+
+    const existingTracks = Array.isArray(target.tracks) ? target.tracks : [];
+    const isDuplicate = existingTracks.some(
+      (t) => (t.videoId && t.videoId === normalized.videoId) || t.id === normalized.id
+    );
+
+    const playlistName = target.name || target.title || 'Playlist';
+    if (isDuplicate) {
+      return { added: false, reason: 'duplicate', playlistName };
+    }
+
+    const nextTracks = [...existingTracks, normalized];
+    const nextPlaylists = playlists.map((p) =>
+      p.id === playlistId ? { ...p, tracks: nextTracks } : p
+    );
+
+    persistTracks(playlistId, nextTracks);
+    set({ playlists: nextPlaylists });
+    return { added: true, playlistName };
+  },
+
+  removeTrackFromPlaylist: (playlistId, videoId) => {
+    if (!playlistId || !videoId) return { removed: false };
+    const playlists = get().playlists;
+    const target = playlists.find((p) => p.id === playlistId);
+    if (!target) return { removed: false };
+
+    const existingTracks = Array.isArray(target.tracks) ? target.tracks : [];
+    const nextTracks = existingTracks.filter(
+      (t) => (t.videoId || t.id) !== videoId
+    );
+
+    const playlistName = target.name || target.title || 'Playlist';
+    const nextPlaylists = playlists.map((p) =>
+      p.id === playlistId ? { ...p, tracks: nextTracks } : p
+    );
+
+    persistTracks(playlistId, nextTracks);
+    set({ playlists: nextPlaylists });
+    return { removed: true, playlistName };
+  },
+
+  createPlaylistWithTrack: async (name, track) => {
+    const created = await get().createPlaylist(name);
+    if (created && track) {
+      get().addTrackToPlaylist(created.id, track);
+      return {
+        ...created,
+        tracks: [normalizeTrack(track)],
+      };
+    }
+    return created;
+  },
+
+  isFollowingArtist: (artistName) => {
+    if (!artistName) return false;
+    const clean = artistName.trim().toLowerCase();
+    return get().followedArtists.some((a) => a.name.toLowerCase() === clean);
+  },
+
+  toggleFollowArtist: (artist) => {
+    if (!artist) return false;
+    const artistName = typeof artist === 'string' ? artist.trim() : (artist.name || '').trim();
+    if (!artistName) return false;
+
+    const prev = get().followedArtists;
+    const clean = artistName.toLowerCase();
+    const isFollowing = prev.some((a) => a.name.toLowerCase() === clean);
+
+    let next;
+    if (isFollowing) {
+      next = prev.filter((a) => a.name.toLowerCase() !== clean);
+    } else {
+      const entry = typeof artist === 'object' ? {
+        id: `artist-${Date.now()}`,
+        name: artistName,
+        avatar: artist.avatar || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+        genre: artist.genre || 'Electronic',
+        followedAt: new Date().toISOString(),
+      } : {
+        id: `artist-${Date.now()}`,
+        name: artistName,
+        avatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+        genre: 'Electronic',
+        followedAt: new Date().toISOString(),
+      };
+      next = [entry, ...prev];
+    }
+
+    saveFollowedArtists(next);
+    set({ followedArtists: next });
+    return !isFollowing;
+  },
+
   setMood: async (index, name) => {
     const nextMood = { index, name };
     set({ mood: nextMood });
-
     try {
       await apiClient.vibe.updateMoodOrMode({ mood: name.toLowerCase() });
     } catch (err) {
       console.warn('[LibraryStore] updateMood failed on server:', err);
-      // Keep optimistic mood in memory so UI never breaks
     }
   },
 
-  /**
-   * Update public/private session mode with optimistic update
-   */
   setMode: async (mode) => {
     set({ mode });
-
     try {
       await apiClient.vibe.updateMoodOrMode({ mode });
     } catch (err) {
       console.warn('[LibraryStore] updateMode failed on server:', err);
-      // Keep optimistic mode
     }
   },
 }));

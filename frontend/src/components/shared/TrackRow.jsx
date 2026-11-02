@@ -1,26 +1,32 @@
 import React from 'react';
-import { Play, Pause, Heart, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Play, Pause, Heart, Plus, Trash2 } from 'lucide-react';
 import { useAudio } from '../../hooks/useAudio';
 import { useLibraryStore } from '../../store/useLibraryStore';
+import { useUiStore } from '../../store/useUiStore';
 import CoverImage from './CoverImage';
 
 /**
  * Reusable TrackRow component across Search, Library, Playlist, Genre, Recents & Magic Vibe.
  * Ensures consistent design tokens, buttons with aria-labels, and optimistic like states.
- * Event bubbling is strictly stopped on action buttons so clicking Like or Add does not trigger playback.
+ * Event bubbling is strictly stopped on action buttons so clicking Like, Add, or Artist does not trigger playback.
  */
 export default function TrackRow({
   track,
   index,
   queue,
   onAddToPlaylist,
+  onRemove,
   showIndex = true,
   showLike = true,
   showAdd = true,
+  showRemove = false,
 }) {
+  const navigate = useNavigate();
   const { playTrack, currentTrack, isPlaying, togglePlay, showToast } = useAudio();
   const isLiked = useLibraryStore((s) => s.isLiked(track?.videoId || track?.id));
   const toggleLike = useLibraryStore((s) => s.toggleLike);
+  const openAddToPlaylist = useUiStore((s) => s.openAddToPlaylist);
 
   if (!track) return null;
 
@@ -47,7 +53,14 @@ export default function TrackRow({
     if (onAddToPlaylist) {
       onAddToPlaylist(track);
     } else {
-      showToast(`Track "${track.title}" added to queue`);
+      openAddToPlaylist(track);
+    }
+  };
+
+  const handleArtistClick = (e) => {
+    e.stopPropagation();
+    if (track.artist) {
+      navigate(`/artist/${encodeURIComponent(track.artist)}`);
     }
   };
 
@@ -116,7 +129,7 @@ export default function TrackRow({
           />
         </div>
 
-        {/* Metadata: 2-line wrapped full title */}
+        {/* Metadata: 2-line wrapped full title + clickable artist name */}
         <div className="min-w-0 flex-1">
           <p
             className={`text-xs sm:text-sm font-medium line-clamp-2 leading-snug break-words transition ${
@@ -126,7 +139,18 @@ export default function TrackRow({
             {track.title}
           </p>
           <div className="flex items-center gap-1.5 text-xs text-[#8A8A8E] truncate mt-0.5">
-            <span className="truncate">{track.artist}</span>
+            <span
+              onClick={handleArtistClick}
+              role="link"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleArtistClick(e);
+              }}
+              aria-label={`View artist ${track.artist}`}
+              className="truncate hover:underline hover:text-[#1ED760] transition cursor-pointer"
+            >
+              {track.artist}
+            </span>
             {track.reason && (
               <>
                 <span>•</span>
@@ -137,7 +161,7 @@ export default function TrackRow({
         </div>
       </div>
 
-      {/* Right: Duration + Like + Add + Play Button */}
+      {/* Right: Duration + Like + Add + Optional Remove + Play Button */}
       <div className="flex items-center gap-2 shrink-0">
         <span className="text-[11px] font-mono text-[#8A8A8E] w-10 text-right">
           {durationStr}
@@ -160,10 +184,23 @@ export default function TrackRow({
         {showAdd && (
           <button
             onClick={handleAddClick}
-            aria-label={`Add ${track.title} to queue`}
+            aria-label={`Add ${track.title} to playlist`}
             className="w-7 h-7 rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        )}
+
+        {showRemove && onRemove && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(track);
+            }}
+            aria-label={`Remove ${track.title} from playlist`}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-red-400 hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         )}
 
