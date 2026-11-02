@@ -6,6 +6,7 @@ const YouTubePlayer = memo(function YouTubePlayer() {
     currentTrack,
     currentTime,
     setPlayerRef,
+    skipTrack,
     skipNext,
     setPlayerReady,
     volume,
@@ -17,10 +18,15 @@ const YouTubePlayer = memo(function YouTubePlayer() {
   const containerRef = useRef(null);
   const playerInstanceRef = useRef(null);
   const isInitializedRef = useRef(false);
+  const skipTrackRef = useRef(skipTrack);
   const skipNextRef = useRef(skipNext);
   const isRepeatRef = useRef(isRepeat);
   const initialVideoIdRef = useRef(currentTrack?.videoId);
   const initialTimeRef = useRef(currentTime);
+
+  useEffect(() => {
+    skipTrackRef.current = skipTrack;
+  }, [skipTrack]);
 
   useEffect(() => {
     skipNextRef.current = skipNext;
@@ -116,19 +122,16 @@ const YouTubePlayer = memo(function YouTubePlayer() {
           },
           onError: (event) => {
             console.error(`[YouTubePlayer] Player error code: ${event.data}`);
-            // Error 100: Video not found or marked private
-            if (event.data === 100) {
-              console.warn('[YouTubePlayer] Auto-skipping unavailable or removed video...');
-              showToast('Auto-skipping unavailable track...');
-              skipNextRef.current();
-              return;
-            }
-
-            // Error 101 or 150: The owner of the video does not allow it to be played in embedded players
-            if (event.data === 101 || event.data === 150) {
-              console.warn('[YouTubePlayer] Embedded playback restricted by owner.');
-              setIsPlaying(false);
-              showToast('Embedded playback restricted by owner. Try another track.');
+            const errorCode = event.data;
+            // Codes 100 (not found/private), 101/150 (embedding restricted by owner)
+            if (errorCode === 100 || errorCode === 101 || errorCode === 150) {
+              console.warn(`[YouTubePlayer] Track restricted/unavailable (code ${errorCode}). Auto-skipping...`);
+              showToast('Track restricted by label • Skipping to next...');
+              if (skipTrackRef.current) {
+                skipTrackRef.current(1);
+              } else if (skipNextRef.current) {
+                skipNextRef.current();
+              }
             }
           },
         },

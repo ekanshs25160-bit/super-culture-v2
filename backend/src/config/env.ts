@@ -20,7 +20,7 @@ export interface AppConfig {
 
 export const env: AppConfig = {
   port: Number(process.env.PORT) || 5001,
-  host: process.env.HOST || '0.0.0.0',
+  host: process.env.HOST || '127.0.0.1',
   corsOrigin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
   geminiApiKey: process.env.GEMINI_API_KEY,
   dbPath: process.env.DB_PATH || path.resolve(__dirname, '../../data/super_culture.db'),

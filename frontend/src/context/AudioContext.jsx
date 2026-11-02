@@ -5,6 +5,7 @@ import { INITIAL_TRACK_QUEUE } from '../data/tracks';
 
 export const AudioContext = createContext({
   currentTrack: null,
+  currentTrackIndex: 0,
   queue: [],
   isPlaying: false,
   currentTime: 0,
@@ -19,7 +20,9 @@ export const AudioContext = createContext({
   isAiDjActive: false,
   privacyMode: 'public',
   activeMood: { index: 0, name: 'Energetic' },
+  playSelectedTrack: () => {},
   playTrack: () => {},
+  skipTrack: () => {},
   togglePlay: () => {},
   skipNext: () => {},
   skipPrev: () => {},
@@ -49,6 +52,12 @@ export const AudioProvider = ({ children }) => {
     : INITIAL_TRACK_QUEUE;
 
   const [currentTrack, setCurrentTrack] = useState(defaultTrack);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(() => {
+    const idx = defaultQueue.findIndex(
+      (t) => (defaultTrack?.videoId && t.videoId === defaultTrack.videoId) || t.id === defaultTrack?.id
+    );
+    return idx !== -1 ? idx : 0;
+  });
   const [queue, setQueue] = useState(defaultQueue);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(initialState.currentTime || 0);
@@ -73,6 +82,7 @@ export const AudioProvider = ({ children }) => {
   // Ref to always access latest state in callbacks without re-attaching listeners
   const stateRef = useRef({
     currentTrack,
+    currentTrackIndex,
     queue,
     isShuffle,
     isRepeat,
@@ -85,6 +95,7 @@ export const AudioProvider = ({ children }) => {
   useEffect(() => {
     stateRef.current = {
       currentTrack,
+      currentTrackIndex,
       queue,
       isShuffle,
       isRepeat,
@@ -93,7 +104,7 @@ export const AudioProvider = ({ children }) => {
       currentTime,
       isEmptyPlayer,
     };
-  }, [currentTrack, queue, isShuffle, isRepeat, isPlaying, volume, currentTime, isEmptyPlayer]);
+  }, [currentTrack, currentTrackIndex, queue, isShuffle, isRepeat, isPlaying, volume, currentTime, isEmptyPlayer]);
 
   // Sync to body paused-eq class
   useEffect(() => {
@@ -135,25 +146,33 @@ export const AudioProvider = ({ children }) => {
     setIsPlayerReady(true);
   }, []);
 
-  // Play a track and optionally replace queue
-  const playTrack = useCallback((track, newQueue = null) => {
+  // Play a track and dynamically replace or update queue
+  const playSelectedTrack = useCallback((track, customQueue = null) => {
     if (!track) return;
 
     if (isEmptyPlayer) {
       setIsEmptyPlayer(false);
     }
 
-    if (newQueue && Array.isArray(newQueue) && newQueue.length > 0) {
-      setQueue(newQueue);
+    if (customQueue && Array.isArray(customQueue) && customQueue.length > 0) {
+      setQueue(customQueue);
+      const foundIdx = customQueue.findIndex(
+        (t) => (track.videoId && t.videoId === track.videoId) || t.id === track.id
+      );
+      const targetIndex = foundIdx !== -1 ? foundIdx : 0;
+      setCurrentTrackIndex(targetIndex);
     } else {
-      // Ensure track exists in current queue
-      setQueue((prevQueue) => {
-        const exists = prevQueue.some((t) => t.id === track.id || (track.videoId && t.videoId === track.videoId));
-        if (!exists) {
-          return [...prevQueue, track];
-        }
-        return prevQueue;
-      });
+      const currentQueue = stateRef.current.queue;
+      const existsIndex = currentQueue.findIndex(
+        (t) => (track.videoId && t.videoId === track.videoId) || t.id === track.id
+      );
+      if (existsIndex !== -1) {
+        setCurrentTrackIndex(existsIndex);
+      } else {
+        const updatedQueue = [...currentQueue, track];
+        setQueue(updatedQueue);
+        setCurrentTrackIndex(updatedQueue.length - 1);
+      }
     }
 
     setCurrentTrack(track);
@@ -178,6 +197,8 @@ export const AudioProvider = ({ children }) => {
     showToast(`Playing: ${track.title} — ${track.artist}`);
   }, [isEmptyPlayer, showToast]);
 
+  const playTrack = playSelectedTrack;
+
   // Toggle master Play / Pause
   const togglePlay = useCallback(() => {
     if (isEmptyPlayer) {
@@ -186,7 +207,7 @@ export const AudioProvider = ({ children }) => {
 
     if (!currentTrack) {
       if (queue.length > 0) {
-        playTrack(queue[0]);
+        playSelectedTrack(queue[0]);
       }
       return;
     }
@@ -207,10 +228,10 @@ export const AudioProvider = ({ children }) => {
     } else {
       setIsPlaying(!isPlaying);
     }
-  }, [isEmptyPlayer, currentTrack, queue, isPlaying, playTrack]);
+  }, [isEmptyPlayer, currentTrack, queue, isPlaying, playSelectedTrack]);
 
-  // Skip to next track
-  const skipNext = useCallback(() => {
+  // Skip track forward or backward with direction (+1 or -1)
+  const skipTrack = useCallback((direction = 1) => {
     if (isEmptyPlayer) {
       setIsEmptyPlayer(false);
     }
@@ -218,42 +239,32 @@ export const AudioProvider = ({ children }) => {
     const { queue: currentQueue, currentTrack: activeTrack, isShuffle: shuffle } = stateRef.current;
     if (!currentQueue || currentQueue.length === 0) return;
 
-    const currentIndex = currentQueue.findIndex((t) => t.id === activeTrack?.id || (activeTrack?.videoId && t.videoId === activeTrack.videoId));
-    let nextIndex;
+    const currentIndex = currentQueue.findIndex(
+      (t) => t.id === activeTrack?.id || (activeTrack?.videoId && t.videoId === activeTrack.videoId)
+    );
 
+    let nextIndex;
     if (shuffle && currentQueue.length > 1) {
       do {
         nextIndex = Math.floor(Math.random() * currentQueue.length);
       } while (nextIndex === currentIndex);
     } else {
-      nextIndex = (currentIndex + 1 + currentQueue.length) % currentQueue.length;
+      const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+      nextIndex = (baseIndex + direction + currentQueue.length) % currentQueue.length;
     }
 
     const nextTrack = currentQueue[nextIndex];
     if (nextTrack) {
-      playTrack(nextTrack);
+      playSelectedTrack(nextTrack, currentQueue);
       showToast(`Now Playing: ${nextTrack.title}`);
     }
-  }, [isEmptyPlayer, playTrack, showToast]);
+  }, [isEmptyPlayer, playSelectedTrack, showToast]);
+
+  // Skip to next track
+  const skipNext = useCallback(() => skipTrack(1), [skipTrack]);
 
   // Skip to previous track
-  const skipPrev = useCallback(() => {
-    if (isEmptyPlayer) {
-      setIsEmptyPlayer(false);
-    }
-
-    const { queue: currentQueue, currentTrack: activeTrack } = stateRef.current;
-    if (!currentQueue || currentQueue.length === 0) return;
-
-    const currentIndex = currentQueue.findIndex((t) => t.id === activeTrack?.id || (activeTrack?.videoId && t.videoId === activeTrack.videoId));
-    const prevIndex = currentIndex <= 0 ? currentQueue.length - 1 : currentIndex - 1;
-    const prevTrack = currentQueue[prevIndex];
-
-    if (prevTrack) {
-      playTrack(prevTrack);
-      showToast(`Now Playing: ${prevTrack.title}`);
-    }
-  }, [isEmptyPlayer, playTrack, showToast]);
+  const skipPrev = useCallback(() => skipTrack(-1), [skipTrack]);
 
   // Seek playback to specific timestamp in seconds
   const seekTo = useCallback((seconds) => {
@@ -395,6 +406,7 @@ export const AudioProvider = ({ children }) => {
     <AudioContext.Provider
       value={{
         currentTrack,
+        currentTrackIndex,
         queue,
         isPlaying,
         currentTime,
@@ -409,7 +421,9 @@ export const AudioProvider = ({ children }) => {
         isAiDjActive,
         privacyMode,
         activeMood,
+        playSelectedTrack,
         playTrack,
+        skipTrack,
         togglePlay,
         skipNext,
         skipPrev,

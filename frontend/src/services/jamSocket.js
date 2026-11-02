@@ -18,7 +18,7 @@ class JamSocketClient {
   }
 
   getWsUrl() {
-    if (typeof window === 'undefined') return 'ws://localhost:5001/ws/jam';
+    if (typeof window === 'undefined') return 'ws://127.0.0.1:5001/ws/jam';
     const isHttps = window.location.protocol === 'https:';
     const host = window.location.host;
     return `${isHttps ? 'wss:' : 'ws:'}//${host}/ws/jam`;

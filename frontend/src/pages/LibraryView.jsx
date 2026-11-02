@@ -39,6 +39,15 @@ export default function LibraryView() {
         duration: '3:45',
         seconds: 225,
       },
+      tracks: p.tracks?.length > 0 ? p.tracks : [{
+        id: p.id,
+        videoId: 'MV_3Dpw-BRY',
+        title: p.name || p.title,
+        artist: 'Personal Archive',
+        cover: p.coverUrl || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+        duration: '3:45',
+        seconds: 225,
+      }],
     }));
 
   const allPlaylists = [
@@ -49,6 +58,7 @@ export default function LibraryView() {
       cover: likedSongs[0]?.cover || likedSongs[0]?.thumbnailUrl || LIBRARY_TRACKS.likedSongs.cover,
       tag: 'PINNED PLAYLIST',
       track: likedSongs[0] || LIBRARY_TRACKS.likedSongs,
+      tracks: likedSongs.length > 0 ? likedSongs : [LIBRARY_TRACKS.likedSongs],
     },
     {
       id: '35mm-night-archive',
@@ -57,6 +67,7 @@ export default function LibraryView() {
       cover: LIBRARY_TRACKS.tapeArchive.cover,
       tag: 'EDITORIAL',
       track: LIBRARY_TRACKS.tapeArchive,
+      tracks: [LIBRARY_TRACKS.tapeArchive, ...INITIAL_TRACK_QUEUE],
     },
     {
       id: 'tokyo-electronic',
@@ -65,6 +76,7 @@ export default function LibraryView() {
       cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=300&q=80',
       tag: 'CURATED',
       track: INITIAL_TRACK_QUEUE[0],
+      tracks: INITIAL_TRACK_QUEUE,
     },
     ...customPlaylists,
   ];
@@ -99,7 +111,7 @@ export default function LibraryView() {
               tag={pl.tag}
               isLikedSongs={pl.id === 'liked-songs'}
               onClick={() => navigate(`/library/${pl.id}`)}
-              onPlay={() => playTrack(pl.track)}
+              onPlay={() => playTrack(pl.track, pl.tracks || [pl.track])}
             />
           ))}
         </div>

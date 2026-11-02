@@ -52,13 +52,13 @@ export default function PlayerBar() {
   const [serverUpNext, setServerUpNext] = useState(null);
   const lastLoggedRef = useRef(null);
 
-  // Fallback queue next track
+  // Active queue next track
   const currentIndex = queue.findIndex(
     (t) => t.id === currentTrack?.id || (currentTrack?.videoId && t.videoId === currentTrack.videoId)
   );
-  const queueNextTrack = queue.length > 0
+  const queueNextTrack = queue.length > 1
     ? queue[(currentIndex + 1 + queue.length) % queue.length]
-    : currentTrack;
+    : queue[0] || currentTrack;
 
   // Real server-backed up-next track recommendation & history logging
   useEffect(() => {
@@ -98,13 +98,15 @@ export default function PlayerBar() {
     };
   }, [currentTrack, isPlaying]);
 
-  const nextTrack = serverUpNext || queueNextTrack;
+  // Next track prioritized from real active queue when multiple tracks exist
+  const nextTrack = (queue && queue.length > 1) ? queueNextTrack : (serverUpNext || queueNextTrack);
 
   const handleLikeClick = (e) => {
     e.stopPropagation();
     if (!currentTrack) return;
+    const wasLiked = isLiked;
     toggleLike(currentTrack);
-    showToast(!isLiked ? 'Saved to Liked Songs' : 'Removed from Liked Songs');
+    showToast(!wasLiked ? 'Saved to Liked Songs' : 'Removed from Liked Songs');
   };
 
   const handleMasterPlay = () => {
@@ -126,7 +128,9 @@ export default function PlayerBar() {
   };
 
   const handleNextClick = () => {
-    if (serverUpNext) {
+    if (queue.length > 1) {
+      handleSkipNext();
+    } else if (serverUpNext) {
       if (currentRoom) {
         broadcastTrackChange(serverUpNext);
       }

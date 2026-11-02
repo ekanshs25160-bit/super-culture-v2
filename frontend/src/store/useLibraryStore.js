@@ -31,11 +31,14 @@ export const useLibraryStore = create((set, get) => ({
   error: null,
 
   /**
-   * Check if a given video ID is liked
+   * Check if a given video ID or track ID is liked in the active library
    */
   isLiked: (videoId) => {
     if (!videoId) return false;
-    return get().likedSongIds.has(videoId);
+    return (
+      get().likedSongIds.has(videoId) ||
+      get().likedSongs.some((s) => s.videoId === videoId || s.id === videoId)
+    );
   },
 
   /**
