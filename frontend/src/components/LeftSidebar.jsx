@@ -14,6 +14,7 @@ import {
 import { AudioContext } from '../context/AudioContext';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { LIBRARY_TRACKS } from '../data/tracks';
+import CoverImage from './shared/CoverImage';
 
 export default function LeftSidebar() {
   const {
@@ -26,8 +27,6 @@ export default function LeftSidebar() {
     likedSongs,
     likedCount,
     playlists,
-    mood,
-    setMood,
     createPlaylist,
     fetchLibraryOverview,
     loading,
@@ -48,13 +47,6 @@ export default function LeftSidebar() {
     { id: 'Downloaded', label: 'Downloaded', to: '/downloaded', icon: Download },
   ];
 
-  const moods = [
-    { name: 'Energetic', emoji: '⚡' },
-    { name: 'Chill', emoji: '☕' },
-    { name: 'Melancholic', emoji: '🌧️' },
-    { name: 'Focused', emoji: '🎯' },
-  ];
-
   const handleCreatePlaylist = async (e) => {
     e.stopPropagation();
     const count = playlists.length + 1;
@@ -69,7 +61,7 @@ export default function LeftSidebar() {
   };
 
   return (
-    <aside className="w-full max-w-[268px] flex flex-col gap-3 pointer-events-auto h-full min-h-0 overflow-y-auto no-scrollbar">
+    <aside className="w-full flex flex-col gap-3 pointer-events-auto h-full min-h-0 overflow-y-auto no-scrollbar">
       {/* CARD A: NAVIGATION CARD */}
       <nav className="sc-card sc-card-hover p-4 shrink-0" aria-label="Main Navigation">
         <ul className="space-y-1 text-xs font-medium">
@@ -109,32 +101,7 @@ export default function LeftSidebar() {
           ))}
         </ul>
       </nav>
-
-      {/* CARD B: MOOD CARD */}
-      <section className="sc-card sc-card-hover px-4 py-3.5 flex flex-col items-center shrink-0">
-        <div className="flex items-center justify-between w-full gap-2 mb-2.5">
-          {moods.map((m, idx) => {
-            const isSelected = (mood?.name || '').toLowerCase() === m.name.toLowerCase();
-            return (
-              <button
-                key={m.name}
-                onClick={() => setMood(idx, m.name)}
-                aria-label={`Feel ${m.name}`}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 active:scale-95 cursor-pointer text-base ${
-                  isSelected
-                    ? 'bg-[#FACC15] text-[#0B0B0C] shadow-[0_0_16px_rgba(250,204,21,0.5)] ring-2 ring-[#FACC15]/40'
-                    : 'bg-white/5 hover:bg-white/10 text-[#8A8A8E] hover:text-white border border-white/10'
-                }`}
-              >
-                <span>{m.emoji}</span>
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-xs text-[#8A8A8E]">
-          I feel <span id="mood-text-highlight" className="text-[#FACC15] font-medium">{mood?.name || 'Energetic'}</span> today
-        </p>
-      </section>
+      
 
       {/* CARD C: LIBRARY CARD */}
       <section className="sc-card sc-card-hover p-4 flex-1 flex flex-col min-h-0">
@@ -195,10 +162,8 @@ export default function LeftSidebar() {
             }}
             className="group flex items-center gap-3 p-1.5 rounded-2xl hover:bg-white/[0.06] cursor-pointer transition"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] via-[#8B5CF6] to-[#A855F7] flex items-center justify-center shadow-md shrink-0">
-              <svg className="w-4 h-4 text-white fill-current" viewBox="0 0 24 24">
-                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-              </svg>
+            <div className="w-10 h-10 rounded-xl bg-[#17171A] border border-white/10 flex items-center justify-center shadow-md shrink-0">
+              <Heart className="w-4 h-4 text-[#1ED760] fill-current" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-[#F4F4F2] truncate group-hover:text-[#1ED760] transition">
@@ -219,9 +184,10 @@ export default function LeftSidebar() {
             className="group flex items-center justify-between gap-3 p-1.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.1] cursor-pointer transition"
           >
             <div className="flex items-center gap-3 min-w-0">
-              <img
+              <CoverImage
                 src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80"
-                alt="Fred again.."
+                alt=""
+                iconSize="w-4 h-4"
                 className="w-10 h-10 rounded-full object-cover grayscale contrast-125 shrink-0 border border-white/15"
               />
               <div className="min-w-0">
@@ -245,9 +211,10 @@ export default function LeftSidebar() {
             }}
             className="group flex items-center gap-3 p-1.5 rounded-2xl hover:bg-white/[0.06] cursor-pointer transition"
           >
-            <img
+            <CoverImage
               src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=200&q=80"
-              alt="35mm Night Archive"
+              alt=""
+              iconSize="w-4 h-4"
               className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/10"
             />
             <div className="min-w-0 flex-1">

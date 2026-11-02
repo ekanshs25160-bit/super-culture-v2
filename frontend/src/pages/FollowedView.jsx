@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Search } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { PageHeader, EmptyState } from '../components/shared';
 
 export default function FollowedView() {

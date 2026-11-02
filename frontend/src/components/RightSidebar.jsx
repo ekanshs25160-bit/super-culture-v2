@@ -4,6 +4,7 @@ import { Users, UserPlus, Radio, Plus, ArrowUpRight } from 'lucide-react';
 import { AudioContext } from '../context/AudioContext';
 import { useJamStore } from '../store/useJamStore';
 import { friendsService } from '../services/friendsService';
+import CoverImage from './shared/CoverImage';
 
 export default function RightSidebar() {
   const { playTrack, isPlaying, showToast } = useContext(AudioContext);
@@ -54,7 +55,7 @@ export default function RightSidebar() {
   };
 
   return (
-    <aside className="w-full max-w-[305px] lg:ml-auto flex flex-col gap-3 pointer-events-auto h-full min-h-0 overflow-y-auto no-scrollbar">
+    <aside className="w-full flex flex-col gap-3 pointer-events-auto h-full min-h-0 overflow-y-auto no-scrollbar">
       {/* CARD A: FRIEND ACTIVITY CARD */}
       <section className="sc-card sc-card-hover p-4 shrink-0">
         <div className="flex items-center justify-between mb-3">
@@ -85,9 +86,10 @@ export default function RightSidebar() {
               className="group p-2 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.04] cursor-pointer transition select-none"
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <img
+                <CoverImage
                   src={friend.track.cover}
-                  alt={friend.track.title}
+                  alt=""
+                  iconSize="w-3.5 h-3.5"
                   className="w-9 h-9 rounded-lg object-cover grayscale contrast-125 shrink-0"
                 />
                 <div className="min-w-0 flex-1">
@@ -100,9 +102,10 @@ export default function RightSidebar() {
 
               <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-white/[0.05]">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <img
+                  <CoverImage
                     src={friend.avatar}
-                    alt={friend.name}
+                    alt=""
+                    iconSize="w-2.5 h-2.5"
                     className="w-4 h-4 rounded-full object-cover shrink-0"
                   />
                   <span className="text-[11px] text-[#8A8A8E] truncate">{friend.name}</span>
@@ -140,8 +143,8 @@ export default function RightSidebar() {
         <div className="flex items-center justify-between mb-2.5 shrink-0">
           <div className="flex items-center gap-2">
             <span
-              className={`w-2 h-2 rounded-full glow-green-sm ${
-                socketConnected ? 'bg-[#1ED760]' : 'bg-amber-400'
+              className={`w-2 h-2 rounded-full ${
+                socketConnected ? 'bg-[#1ED760] glow-green-sm' : 'bg-[#8A8A8E]'
               }`}
               aria-hidden="true"
             />
@@ -178,9 +181,10 @@ export default function RightSidebar() {
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="relative shrink-0">
-                      <img
+                      <CoverImage
                         src={room.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80'}
-                        alt={room.host || 'Host'}
+                        alt=""
+                        iconSize="w-3.5 h-3.5"
                         className="w-8 h-8 rounded-full object-cover border border-[#1ED760]"
                       />
                       <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#1ED760] ring-2 ring-[#141416]" />

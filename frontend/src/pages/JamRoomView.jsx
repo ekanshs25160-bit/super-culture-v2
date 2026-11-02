@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Radio, Users, SkipForward, Plus, ArrowLeft, Disc } from 'lucide-react';
-import { PageHeader, TrackRow, EmptyState } from '../components/shared';
+import { Radio, Users, SkipForward, Plus, Disc } from 'lucide-react';
+import { PageHeader, TrackRow, EmptyState, CoverImage } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useJamStore } from '../store/useJamStore';
 import { TRENDING_TRACKS } from '../data/tracks';
@@ -65,43 +65,30 @@ export default function JamRoomView() {
 
   return (
     <div className="w-full h-full flex flex-col overflow-y-auto no-scrollbar px-2 py-1 pb-24">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pt-1">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleLeave}
-            aria-label="Leave Jam room"
-            className="sc-pill px-3 py-1 text-xs text-[#F4F4F2] hover:text-white flex items-center gap-1.5 transition cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Leave Jam</span>
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#1ED760] glow-green-sm animate-pulse" aria-hidden="true" />
-            <h1 className="font-serif italic text-2xl font-semibold text-[#F4F4F2] tracking-tight truncate">
-              {roomName}
-            </h1>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span
-            className={`sc-pill px-3 py-1 text-xs flex items-center gap-1.5 ${
-              socketConnected
-                ? 'text-[#1ED760] bg-[#1ED760]/10 border border-[#1ED760]/20'
-                : 'text-amber-400 bg-amber-400/10 border border-amber-400/20'
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-[#1ED760]' : 'bg-amber-400'}`} />
-            <span>{socketConnected ? 'WEBSOCKET SYNCED (<15ms)' : 'RECONNECTING WS...'}</span>
-          </span>
-        </div>
-      </div>
+      {/* Standardized PageHeader */}
+      <PageHeader
+        title={roomName}
+        meta="LIVE JAM SESSION"
+        backTo="/"
+        backLabel="Leave Jam"
+        onBack={handleLeave}
+      >
+        <span
+          className={`sc-pill px-3 py-1 text-xs flex items-center gap-1.5 ${
+            socketConnected
+              ? 'text-[#1ED760] bg-[#1ED760]/10 border border-[#1ED760]/20'
+              : 'text-[#8A8A8E] bg-white/5 border border-white/10'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-[#1ED760]' : 'bg-[#8A8A8E]'}`} />
+          <span>{socketConnected ? 'WEBSOCKET SYNCED (<15ms)' : 'RECONNECTING WS...'}</span>
+        </span>
+      </PageHeader>
 
       {/* Hero Now Playing in Jam */}
       <div className="sc-card p-5 mb-4 rounded-2xl flex flex-col sm:flex-row items-center gap-5">
         <div className="relative w-28 h-28 shrink-0 rounded-2xl overflow-hidden border border-white/10 bg-black/40 shadow-xl">
-          <img src={nowPlaying.cover} alt={nowPlaying.title} className="w-full h-full object-cover" />
+          <CoverImage src={nowPlaying.cover} alt="" iconSize="w-8 h-8" className="w-full h-full object-cover" />
           <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-black/80 text-[8px] font-mono text-[#1ED760] flex items-center gap-1">
             <Radio className="w-2.5 h-2.5" />
             <span>LIVE</span>
@@ -153,9 +140,10 @@ export default function JamRoomView() {
               key={p.uid || i}
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/10"
             >
-              <img
+              <CoverImage
                 src={p.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80'}
-                alt={p.name}
+                alt=""
+                iconSize="w-3 h-3"
                 className="w-5 h-5 rounded-full object-cover"
               />
               <span className="text-xs text-[#F4F4F2] font-medium">{p.name || `Listener ${i + 1}`}</span>

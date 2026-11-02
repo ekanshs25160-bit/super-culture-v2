@@ -97,6 +97,7 @@ export default function LibraryView() {
               subtitle={pl.subtitle}
               cover={pl.cover}
               tag={pl.tag}
+              isLikedSongs={pl.id === 'liked-songs'}
               onClick={() => navigate(`/library/${pl.id}`)}
               onPlay={() => playTrack(pl.track)}
             />

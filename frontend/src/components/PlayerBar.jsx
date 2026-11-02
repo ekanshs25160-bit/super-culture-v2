@@ -6,6 +6,7 @@ import { useJamStore } from '../store/useJamStore';
 import { apiClient } from '../services/api';
 import PlayerTransport from './player/PlayerTransport';
 import PlayerUtilities from './player/PlayerUtilities';
+import CoverImage from './shared/CoverImage';
 
 function formatTime(seconds) {
   if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -34,7 +35,6 @@ export default function PlayerBar() {
     setVolumeLevel,
     toggleShuffle,
     toggleRepeat,
-    toggleEmptyPlayer,
     showToast,
   } = useContext(AudioContext);
 
@@ -171,10 +171,11 @@ export default function PlayerBar() {
               {!isEmptyPlayer ? (
                 <div id="player-left-active" className="flex items-center gap-3 min-w-0 w-full">
                   <div className="relative w-12 h-12 shrink-0">
-                    <img
+                    <CoverImage
                       id="player-cover"
-                      src={currentTrack?.cover || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=200&q=80'}
-                      alt="Now Playing Cover"
+                      src={currentTrack?.cover}
+                      alt=""
+                      iconSize="w-5 h-5"
                       className="w-12 h-12 rounded-2xl object-cover border border-white/15 shadow-md"
                     />
                   </div>
@@ -242,11 +243,9 @@ export default function PlayerBar() {
 
             {/* RIGHT: "PLAYING NEXT" Pill, Lyrics, Devices, Volume */}
             <PlayerUtilities
-              isEmptyPlayer={isEmptyPlayer}
               nextTrack={nextTrack}
               volumeTrackRef={volumeTrackRef}
               volumePct={volumePct}
-              onToggleEmptyPlayer={toggleEmptyPlayer}
               onNextClick={handleNextClick}
               onVolumeClick={handleVolumeClick}
               onShowToast={showToast}

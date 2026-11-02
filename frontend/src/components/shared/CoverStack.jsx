@@ -1,4 +1,5 @@
 import React from 'react';
+import CoverImage from './CoverImage';
 
 /**
  * CoverStack renders a stylized overlapping deck of album sleeves
@@ -17,16 +18,16 @@ export default function CoverStack({ covers = [], className = '' }) {
     <div className={`relative w-24 h-24 sm:w-28 sm:h-28 shrink-0 ${className}`}>
       {displayCovers.length > 2 && (
         <div className="absolute inset-0 translate-x-2 -translate-y-1.5 rotate-6 rounded-2xl overflow-hidden border border-white/10 shadow-lg opacity-40">
-          <img src={displayCovers[2]} alt="Cover layer 3" className="w-full h-full object-cover" />
+          <CoverImage src={displayCovers[2]} alt="" className="w-full h-full object-cover" />
         </div>
       )}
       {displayCovers.length > 1 && (
         <div className="absolute inset-0 translate-x-1 -translate-y-0.5 rotate-3 rounded-2xl overflow-hidden border border-white/15 shadow-xl opacity-70">
-          <img src={displayCovers[1]} alt="Cover layer 2" className="w-full h-full object-cover" />
+          <CoverImage src={displayCovers[1]} alt="" className="w-full h-full object-cover" />
         </div>
       )}
       <div className="relative w-full h-full rounded-2xl overflow-hidden border border-white/20 shadow-2xl bg-black/60">
-        <img src={displayCovers[0]} alt="Primary album cover" className="w-full h-full object-cover" />
+        <CoverImage src={displayCovers[0]} alt="" className="w-full h-full object-cover" />
       </div>
     </div>
   );

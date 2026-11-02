@@ -4,4 +4,6 @@ export { default as CoverStack } from './CoverStack';
 export { default as PlaylistCard } from './PlaylistCard';
 export { default as EmptyState } from './EmptyState';
 export { default as Skeleton } from './Skeleton';
+export { default as Wordmark } from '../Wordmark';
+export { default as CoverImage } from './CoverImage';
 

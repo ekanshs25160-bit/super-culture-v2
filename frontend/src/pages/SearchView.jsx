@@ -1,17 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search as SearchIcon, Clock, X, Disc, Users, Music } from 'lucide-react';
-import { PageHeader, TrackRow, PlaylistCard, EmptyState, Skeleton } from '../components/shared';
+import { Clock, X, Search as SearchIcon } from 'lucide-react';
+import { AudioContext } from '../context/AudioContext';
+import { PageHeader, TrackRow, EmptyState, Skeleton, CoverImage } from '../components/shared';
+import TopResultCard from '../components/search/TopResultCard';
 import { TRENDING_TRACKS, LIBRARY_TRACKS } from '../data/tracks';
 
 const RECENT_KEY = 'super_culture_recent_searches';
 const DEFAULT_RECENTS = ['Frank Ocean', 'Burial', 'Fred again..', 'Aphex Twin', 'Synthwave'];
 
+const GENRE_CHIPS = [
+  'All',
+  'Electronic',
+  'Hip Hop',
+  'Ambient',
+  'Synthwave',
+  'Indie',
+  'Lo-Fi',
+  'Lossless Cuts',
+  'Tokyo Express',
+  'Jazz',
+];
+
 export default function SearchView() {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get('q') || '';
-  const [searchInput, setSearchInput] = useState(query);
-  const [activeTab, setActiveTab] = useState('Songs');
+  const { playTrack } = useContext(AudioContext);
+  const navigate = useNavigate();
+
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [recentSearches, setRecentSearches] = useState(() => {
@@ -23,8 +39,6 @@ export default function SearchView() {
       return DEFAULT_RECENTS;
     }
   });
-
-  const navigate = useNavigate();
 
   // Fetch search results from /api/music/search
   useEffect(() => {
@@ -48,18 +62,13 @@ export default function SearchView() {
           videoId: t.videoId || t.id,
           title: t.title || 'Untitled Track',
           artist: t.artist || 'Unknown Artist',
-          cover:
-            t.cover ||
-            t.thumbnailUrl ||
-            t.albumArt ||
-            t.thumbnail_url ||
-            'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+          cover: t.cover || t.thumbnailUrl || t.albumArt || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
           duration: t.durationFormatted || t.duration || '3:30',
           seconds: typeof t.duration === 'number' ? t.duration : 210,
         }));
         if (isMounted) setTracks(normalized);
       } catch (err) {
-        console.warn('[SearchView] API search failed, falling back to seed:', err);
+        console.warn('[SearchView] API search fallback to seed:', err.message);
         if (isMounted) {
           const fallback = TRENDING_TRACKS.filter(
             (t) =>
@@ -102,94 +111,64 @@ export default function SearchView() {
     }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (searchInput.trim()) {
-      saveRecentSearch(searchInput.trim());
-      setSearchParams({ q: searchInput.trim() });
+  const handleSelectGenre = (chip) => {
+    if (chip === 'All') {
+      setSearchParams({});
+    } else {
+      saveRecentSearch(chip);
+      setSearchParams({ q: chip });
     }
   };
 
-  const handleSelectRecent = (term) => {
-    setSearchInput(term);
-    saveRecentSearch(term);
-    setSearchParams({ q: term });
-  };
+  const topTrack = tracks[0] || null;
+  const artistResults = [
+    { name: query || 'Burial', role: 'Electronic / Ambient', avatar: LIBRARY_TRACKS.fredAgain.cover },
+    { name: query ? `${query} & Friends` : 'Four Tet', role: 'Curated Selection', avatar: LIBRARY_TRACKS.tapeArchive.cover },
+    { name: 'Kavinsky', role: 'French Electro', avatar: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=160&q=80' },
+    { name: 'Massive Attack', role: 'Trip-Hop Pioneer', avatar: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=160&q=80' },
+  ];
 
   return (
-    <div className="w-full h-full flex flex-col overflow-y-auto no-scrollbar px-2 py-1 pb-24">
+    <div className="sc-card p-5 sm:p-6 w-full h-full flex flex-col min-h-0 overflow-y-auto no-scrollbar rounded-[24px]">
       <PageHeader
         title="Search"
         meta={query ? `RESULTS FOR "${query.toUpperCase()}"` : 'EXPLORE ARCHIVE'}
       />
 
-      {/* Search Input Bar */}
-      <form onSubmit={handleSubmit} className="flex gap-2 mb-4 shrink-0">
-        <div className="sc-pill flex items-center gap-2.5 px-4 h-11 flex-1 focus-within:border-white/30 focus-within:bg-black/90">
-          <SearchIcon className="w-4 h-4 text-[#8A8A8E] shrink-0" aria-hidden="true" />
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search tracks, artists, moods or albums..."
-            aria-label="Search query"
-            className="bg-transparent border-none outline-none text-xs text-[#F4F4F2] placeholder-[#8A8A8E] w-full font-normal"
-          />
-          {searchInput && (
+      {/* Horizontally Scrollable High-Contrast Genre Chips (Contrast >= 4.5:1) */}
+      <div
+        className="flex items-center gap-2 overflow-x-auto no-scrollbar snap-x scroll-smooth pb-2 pt-1 mb-4 shrink-0 px-0.5"
+        style={{ scrollPaddingRight: '16px' }}
+      >
+        {GENRE_CHIPS.map((chip) => {
+          const isSelected = (!query && chip === 'All') || query.toLowerCase() === chip.toLowerCase();
+          return (
             <button
-              type="button"
-              onClick={() => {
-                setSearchInput('');
-                setSearchParams({});
-              }}
-              aria-label="Clear search input"
-              className="text-[#8A8A8E] hover:text-white transition cursor-pointer"
+              key={chip}
+              onClick={() => handleSelectGenre(chip)}
+              aria-label={`Filter by ${chip}`}
+              className={`sc-pill px-3.5 py-1.5 text-xs shrink-0 snap-start transition cursor-pointer ${
+                isSelected
+                  ? 'bg-[#F4F4F2] text-[#0B0B0C] font-semibold shadow-sm'
+                  : 'bg-white/[0.08] hover:bg-white/[0.14] text-[#F4F4F2] border border-white/15 font-medium'
+              }`}
             >
-              <X className="w-3.5 h-3.5" aria-hidden="true" />
+              {chip}
             </button>
-          )}
-        </div>
-        <button
-          type="submit"
-          aria-label="Submit search"
-          className="sc-pill px-5 bg-white/10 hover:bg-[#1ED760] hover:text-black text-xs font-semibold text-[#F4F4F2] transition cursor-pointer"
-        >
-          Search
-        </button>
-      </form>
+          );
+        })}
+      </div>
 
-      {/* Tabs: Songs / Artists / Playlists */}
-      {query && (
-        <div className="flex items-center gap-2 mb-4 shrink-0 border-b border-white/10 pb-2">
-          {[
-            { id: 'Songs', icon: Music, label: 'Songs' },
-            { id: 'Artists', icon: Users, label: 'Artists' },
-            { id: 'Playlists', icon: Disc, label: 'Playlists' },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                aria-label={`View ${tab.label}`}
-                className={`sc-pill px-3.5 py-1.5 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
-                  isActive
-                    ? 'bg-[#F4F4F2] text-[#0B0B0C] shadow-sm'
-                    : 'bg-white/5 hover:bg-white/10 text-[#8A8A8E] hover:text-[#F4F4F2]'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+      {/* Loading State: Skeleton rows (no spinner on wordmark) */}
+      {loading && (
+        <div className="space-y-3 py-2">
+          <Skeleton.Row count={6} />
         </div>
       )}
 
-      {/* Recent Searches Pills (When no active query) */}
-      {!query && (
-        <section className="mb-6">
+      {/* Empty State: Recent searches + sonic exploration prompt */}
+      {!loading && !query && (
+        <section className="flex-1 flex flex-col justify-start">
           <div className="flex items-center justify-between mb-3">
             <span className="meta-label text-[10px] text-[#8A8A8E] flex items-center gap-1.5">
               <Clock className="w-3 h-3 text-[#1ED760]" aria-hidden="true" />
@@ -197,23 +176,23 @@ export default function SearchView() {
             </span>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-6">
             {recentSearches.map((term) => (
               <div
                 key={term}
-                onClick={() => handleSelectRecent(term)}
+                onClick={() => handleSelectGenre(term)}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSelectRecent(term);
+                  if (e.key === 'Enter') handleSelectGenre(term);
                 }}
                 aria-label={`Search for ${term}`}
-                className="sc-pill px-3 py-1.5 text-xs text-[#F4F4F2] hover:text-[#1ED760] hover:bg-white/10 flex items-center gap-2 cursor-pointer transition group"
+                className="sc-pill px-3 py-1.5 text-xs text-[#F4F4F2] bg-white/[0.07] hover:bg-white/[0.12] border border-white/10 flex items-center gap-2 cursor-pointer transition"
               >
                 <span>{term}</span>
                 <button
                   onClick={(e) => removeRecentSearch(e, term)}
-                  aria-label={`Remove ${term} from recent searches`}
+                  aria-label={`Remove ${term} from recents`}
                   className="text-[#8A8A8E] hover:text-white transition cursor-pointer"
                 >
                   <X className="w-3 h-3" aria-hidden="true" />
@@ -222,74 +201,94 @@ export default function SearchView() {
             ))}
           </div>
 
-          <div className="mt-8">
-            <EmptyState
-              icon={SearchIcon}
-              title="Explore the Sonic Archive"
-              description="Type an artist, song title, or curated aesthetic keyword to explore lossless streams and editorial cuts."
-            />
-          </div>
+          <EmptyState
+            icon={SearchIcon}
+            title="Explore the Sonic Archive"
+            description="Use the top search bar (⌘K) to explore lossless streams, full artist discographies, and editorial genre cuts."
+          />
         </section>
       )}
 
-      {/* Loading Skeletons */}
-      {loading && <Skeleton.Row count={6} />}
-
-      {/* Results Display */}
+      {/* Search Results Layout: Top Result Card + Song Rows + Artists */}
       {!loading && query && (
-        <>
-          {activeTab === 'Songs' && (
-            <div className="space-y-2">
-              {tracks.length > 0 ? (
-                tracks.map((t, idx) => (
-                  <TrackRow key={t.id + idx} track={t} index={idx} queue={tracks} />
-                ))
-              ) : (
-                <EmptyState
-                  icon={SearchIcon}
-                  title="No Tracks Found"
-                  description={`No sound recordings matched "${query}". Try searching for another artist or genre.`}
-                  actionLabel="Clear Search"
-                  onAction={() => setSearchParams({})}
+        <div className="space-y-6">
+          {tracks.length > 0 ? (
+            <>
+              {/* Row: Top Result Card (Left) + Top Song Rows (Right) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                <TopResultCard
+                  track={topTrack}
+                  onPlay={(t) => playTrack(t, tracks)}
                 />
-              )}
-            </div>
-          )}
 
-          {activeTab === 'Artists' && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {[
-                { name: query, genre: 'Electronic / Ambient', avatar: LIBRARY_TRACKS.fredAgain.cover },
-                { name: `${query} & Friends`, genre: 'Collaborative Archive', avatar: LIBRARY_TRACKS.tapeArchive.cover },
-              ].map((artist, i) => (
-                <div
-                  key={i}
-                  className="sc-card sc-card-hover p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer"
-                >
-                  <img
-                    src={artist.avatar}
-                    alt={artist.name}
-                    className="w-16 h-16 rounded-full object-cover border border-white/15 mb-3"
-                  />
-                  <h4 className="text-sm font-semibold text-[#F4F4F2] truncate w-full">{artist.name}</h4>
-                  <p className="text-xs text-[#8A8A8E] truncate w-full">{artist.genre}</p>
+                {/* Song Rows alongside Top Result */}
+                <div className="lg:col-span-7 flex flex-col min-w-0">
+                  <span className="meta-label text-[#8A8A8E] mb-2">SONGS</span>
+                  <div className="space-y-2 flex-1">
+                    {tracks.slice(topTrack ? 1 : 0, 5).map((track, idx) => (
+                      <TrackRow
+                        key={track.id + idx}
+                        track={track}
+                        index={topTrack ? idx + 1 : idx}
+                        queue={tracks}
+                      />
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
 
-          {activeTab === 'Playlists' && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <PlaylistCard
-                title={`Curated: ${query}`}
-                subtitle="Editorial Selection • 18 tracks"
-                cover={tracks[0]?.cover || LIBRARY_TRACKS.tapeArchive.cover}
-                tag="COLLECTION"
-                onClick={() => navigate('/genre/' + encodeURIComponent(query))}
-              />
-            </div>
+              {/* Compact Artists Row */}
+              <div>
+                <span className="meta-label text-[#8A8A8E] block mb-2.5">ARTISTS</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {artistResults.map((artist, i) => (
+                    <div
+                      key={i}
+                      onClick={() => navigate('/genre/' + encodeURIComponent(artist.name))}
+                      className="sc-card-secondary p-3 rounded-2xl flex items-center gap-3 group cursor-pointer hover:border-white/20 transition"
+                    >
+                      <CoverImage
+                        src={artist.avatar}
+                        alt=""
+                        iconSize="w-4 h-4"
+                        className="w-11 h-11 rounded-full object-cover border border-white/15 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-[#F4F4F2] truncate group-hover:text-[#1ED760] transition">
+                          {artist.name}
+                        </p>
+                        <span className="text-[10px] text-[#8A8A8E] block truncate">{artist.role}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Remaining Song Rows */}
+              {tracks.length > 5 && (
+                <div className="space-y-2 pt-2">
+                  <span className="meta-label text-[#8A8A8E] block mb-1">MORE RECORDINGS</span>
+                  {tracks.slice(5).map((track, idx) => (
+                    <TrackRow
+                      key={track.id + idx + 5}
+                      track={track}
+                      index={idx + 5}
+                      queue={tracks}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <EmptyState
+              icon={SearchIcon}
+              title="No Tracks Found"
+              description={`No sound recordings matched "${query}". Try searching for another artist or genre.`}
+              actionLabel="Clear Search"
+              onAction={() => setSearchParams({})}
+            />
           )}
-        </>
+        </div>
       )}
     </div>
   );

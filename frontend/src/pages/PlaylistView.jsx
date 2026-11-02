@@ -1,6 +1,6 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
-import { Play, Shuffle } from 'lucide-react';
+import { Play, Shuffle, Heart } from 'lucide-react';
 import { PageHeader, TrackRow, CoverStack, EmptyState } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
@@ -70,7 +70,13 @@ export default function PlaylistView() {
 
       {/* Playlist Hero Header Banner */}
       <div className="sc-card p-5 mb-5 rounded-2xl flex flex-col sm:flex-row items-center sm:items-end gap-5">
-        <CoverStack covers={covers} />
+        {isLikedSongs ? (
+          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-[#17171A] border border-white/10 flex items-center justify-center shadow-2xl shrink-0">
+            <Heart className="w-10 h-10 sm:w-12 sm:h-12 text-[#1ED760] fill-current" aria-hidden="true" />
+          </div>
+        ) : (
+          <CoverStack covers={covers} />
+        )}
 
         <div className="flex-1 min-w-0 text-center sm:text-left">
           <span className="meta-label text-[10px] text-[#1ED760] mb-1.5 block">

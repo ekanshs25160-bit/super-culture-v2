@@ -1,12 +1,16 @@
 import { useState, useContext, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Search, Sparkles, Bell, Settings, Maximize2, Globe, Lock } from 'lucide-react';
 import { AudioContext } from '../context/AudioContext';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { apiClient } from '../services/api';
 import { NotificationsPopover, QuickSettingsPopover } from './TopBarPopovers';
+import Wordmark from './Wordmark';
+import CoverImage from './shared/CoverImage';
 
 export default function TopBar() {
+  const location = useLocation();
+  const isHome = location.pathname === '/';
   const {
     showToast,
     isAiDjActive,
@@ -20,13 +24,26 @@ export default function TopBar() {
 
   const navigate = useNavigate();
   const searchInputRef = useRef(null);
-  const [searchVal, setSearchVal] = useState('');
+  const [typedVal, setTypedVal] = useState(null);
+  const qParam = location.pathname === '/search'
+    ? new URLSearchParams(location.search).get('q') || ''
+    : '';
+  const searchVal = typedVal !== null ? typedVal : qParam;
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [localTime, setLocalTime] = useState('');
 
   const notifRef = useRef(null);
   const settingsRef = useRef(null);
+
+  // Update clock every second for telemetry chip
+  useEffect(() => {
+    const updateTime = () => setLocalTime(new Date().toTimeString().split(' ')[0]);
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // ⌘K shortcut listener & click-outside to close popovers
   useEffect(() => {
@@ -60,6 +77,7 @@ export default function TopBar() {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
+    setTypedVal(null);
     if (searchVal.trim()) {
       navigate(`/search?q=${encodeURIComponent(searchVal.trim())}`);
     } else {
@@ -109,34 +127,30 @@ export default function TopBar() {
   };
 
   const getTelemetryStatus = () => {
+    let modeLabel = 'PUBLIC MODE';
     if (isAiDjActive) {
-      return 'AI DJ ACTIVE • MIXING ARCHIVE CUTS';
+      modeLabel = 'AI DJ ACTIVE';
+    } else {
+      const currentMode = mode || privacyMode;
+      if (currentMode === 'private') {
+        modeLabel = 'PRIVATE SESSION';
+      }
     }
-    const currentMode = mode || privacyMode;
-    if (currentMode === 'private') {
-      return 'PRIVATE SESSION • INCOGNITO AUDIO';
-    }
-    return 'PUBLIC MODE • CURATED ARCHIVE';
+    return `${modeLabel} • LOCAL ${localTime || '12:00:00'}`;
   };
 
   const currentMode = mode || privacyMode;
 
   return (
     <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 px-5 pt-2 pb-2">
-      {/* Left: Round White Logo + Frosted Pill Search + Green "Start AI DJ" Pill */}
+      {/* Left: Compact Editorial Wordmark (non-home routes) + Frosted Pill Search + Green "Start AI DJ" Pill */}
       <div className="flex items-center gap-2.5 flex-wrap">
-        {/* Round White Editorial Logo */}
-        <button
-          onClick={() => navigate('/')}
-          title="Super Culture Home"
-          className="w-10 h-10 rounded-full bg-[#F4F4F2] text-[#0B0B0C] flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform cursor-pointer"
-        >
-          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M4 9.5c4.5-2.5 11.5-2.5 16 0" />
-            <path d="M5.5 13c3.8-2 9.2-2 13 0" />
-            <path d="M7.5 16.2c2.5-1.2 6.5-1.2 9 0" />
-          </svg>
-        </button>
+        {/* Compact Wordmark replacing round logo on non-home routes */}
+        {!isHome && (
+          <div className="mr-1">
+            <Wordmark variant="compact" />
+          </div>
+        )}
 
         {/* Frosted Pill Search Input Form */}
         <form
@@ -149,7 +163,7 @@ export default function TopBar() {
             id="global-search"
             type="text"
             value={searchVal}
-            onChange={(e) => setSearchVal(e.target.value)}
+            onChange={(e) => setTypedVal(e.target.value)}
             placeholder="What do you want to play?"
             aria-label="Global music search"
             className="bg-transparent border-none outline-none text-xs text-[#F4F4F2] placeholder-[#8A8A8E] w-full font-normal"
@@ -191,10 +205,7 @@ export default function TopBar() {
         <div className="sc-pill p-1 flex items-center h-10">
           <button
             id="btn-mode-public"
-            onClick={() => {
-              setMode('public');
-              setPrivacyMode('public');
-            }}
+            onClick={() => { setMode('public'); setPrivacyMode('public'); }}
             aria-label="Set session mode to public"
             className={`h-8 px-3.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
               currentMode === 'public'
@@ -207,10 +218,7 @@ export default function TopBar() {
           </button>
           <button
             id="btn-mode-private"
-            onClick={() => {
-              setMode('private');
-              setPrivacyMode('private');
-            }}
+            onClick={() => { setMode('private'); setPrivacyMode('private'); }}
             aria-label="Set session mode to private"
             className={`h-8 px-3.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
               currentMode === 'private'
@@ -229,35 +237,25 @@ export default function TopBar() {
             {/* Notification Bell with Popover Trigger */}
             <div ref={notifRef} className="relative">
               <button
-                onClick={() => {
-                  setIsNotifOpen((prev) => !prev);
-                  setIsSettingsOpen(false);
-                }}
+                onClick={() => { setIsNotifOpen((prev) => !prev); setIsSettingsOpen(false); }}
                 aria-label="Notifications"
                 className="relative w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
               >
                 <Bell className="w-4 h-4" aria-hidden="true" />
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#1ED760] ring-2 ring-[#141416]" />
               </button>
-
-              {/* Glass Notifications Popover */}
               {isNotifOpen && <NotificationsPopover />}
             </div>
 
             {/* Settings Gear with Popover Trigger */}
             <div ref={settingsRef} className="relative">
               <button
-                onClick={() => {
-                  setIsSettingsOpen((prev) => !prev);
-                  setIsNotifOpen(false);
-                }}
+                onClick={() => { setIsSettingsOpen((prev) => !prev); setIsNotifOpen(false); }}
                 aria-label="Settings"
                 className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
               >
                 <Settings className="w-4 h-4" aria-hidden="true" />
               </button>
-
-              {/* Glass Settings Popover */}
               {isSettingsOpen && (
                 <QuickSettingsPopover
                   currentMode={currentMode}
@@ -272,9 +270,10 @@ export default function TopBar() {
               aria-label="Go to library profile"
               className="w-7 h-7 rounded-full overflow-hidden border border-white/25 hover:border-[#1ED760] transition cursor-pointer"
             >
-              <img
+              <CoverImage
                 src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80"
-                alt="User Profile"
+                alt=""
+                iconSize="w-3.5 h-3.5"
                 className="w-full h-full object-cover grayscale contrast-125"
               />
             </button>

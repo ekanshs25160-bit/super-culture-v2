@@ -7,7 +7,6 @@ import EditorialBackground from './components/EditorialBackground';
 import TopBar from './components/TopBar';
 import LeftSidebar from './components/LeftSidebar';
 import RightSidebar from './components/RightSidebar';
-import BottomDiscoveryRow from './components/BottomDiscoveryRow';
 import PlayerBar from './components/PlayerBar';
 
 // Page Views
@@ -85,15 +84,7 @@ function AppLayout() {
         </div>
       </main>
 
-      {/* 4. Center-Bottom Row (Floating Above Player, on Home) */}
-      {isHome && <BottomDiscoveryRow />}
-
-      {/* Spacer to prevent discovery row from being obscured by fixed PlayerBar */}
-      {isHome && (
-        <div className="h-24 md:h-20 shrink-0 pointer-events-none" aria-hidden="true" />
-      )}
-
-      {/* 5. Fixed Audio Player Bar at bottom */}
+      {/* 4. Fixed Audio Player Bar at bottom */}
       <PlayerBar />
     </div>
   );

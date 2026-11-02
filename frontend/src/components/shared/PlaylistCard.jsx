@@ -1,5 +1,6 @@
 import React from 'react';
-import { Play } from 'lucide-react';
+import { Play, Heart } from 'lucide-react';
+import CoverImage from './CoverImage';
 
 /**
  * Reusable PlaylistCard component for Library vault, Search results & Discovery grids.
@@ -12,6 +13,7 @@ export default function PlaylistCard({
   tag,
   onClick,
   onPlay,
+  isLikedSongs = false,
 }) {
   const handlePlayClick = (e) => {
     e.stopPropagation();
@@ -36,12 +38,19 @@ export default function PlaylistCard({
     >
       {/* Square Cover Art with Play Button Hover */}
       <div className="relative aspect-square rounded-xl overflow-hidden mb-3 border border-white/10 bg-black/40">
-        <img
-          src={cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop'}
-          alt={title}
-          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-          loading="lazy"
-        />
+        {isLikedSongs ? (
+          <div className="w-full h-full bg-[#17171A] flex items-center justify-center">
+            <Heart className="w-12 h-12 text-[#1ED760] fill-current" aria-hidden="true" />
+          </div>
+        ) : (
+          <CoverImage
+            src={cover}
+            alt=""
+            iconSize="w-8 h-8"
+            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+            loading="lazy"
+          />
+        )}
         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-end justify-end p-2.5">
           <button
             onClick={handlePlayClick}

@@ -128,7 +128,7 @@ export default function SettingsView() {
               aria-label="Set mode to Public"
               className={`sc-pill flex-1 py-2 text-xs font-medium transition cursor-pointer ${
                 currentMode === 'public'
-                  ? 'bg-[#F4F4F2] text-[#0B0B0C] font-semibold'
+                  ? '!bg-[#F4F4F2] !text-[#0B0B0C] font-semibold'
                   : 'bg-white/5 hover:bg-white/10 text-[#8A8A8E] hover:text-[#F4F4F2]'
               }`}
             >
@@ -143,7 +143,7 @@ export default function SettingsView() {
               aria-label="Set mode to Private"
               className={`sc-pill flex-1 py-2 text-xs font-medium transition cursor-pointer ${
                 currentMode === 'private'
-                  ? 'bg-[#F4F4F2] text-[#0B0B0C] font-semibold'
+                  ? '!bg-[#F4F4F2] !text-[#0B0B0C] font-semibold'
                   : 'bg-white/5 hover:bg-white/10 text-[#8A8A8E] hover:text-[#F4F4F2]'
               }`}
             >
@@ -177,7 +177,7 @@ export default function SettingsView() {
                   aria-label={`Set default mood to ${m.name}`}
                   className={`sc-pill py-2 text-xs flex items-center justify-center gap-2 transition cursor-pointer ${
                     isSelected
-                      ? 'bg-[#FACC15] text-[#0B0B0C] font-semibold'
+                      ? '!bg-[#F4F4F2] !text-[#0B0B0C] font-semibold'
                       : 'bg-white/5 hover:bg-white/10 text-[#8A8A8E] hover:text-[#F4F4F2]'
                   }`}
                 >

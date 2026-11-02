@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useAudio } from '../hooks/useAudio';
 import { INITIAL_TRACK_QUEUE, TRENDING_TRACKS } from '../data/tracks';
+import { PageHeader, CoverImage } from '../components/shared';
 
 export default function GenreView() {
   const { genreId } = useParams();
@@ -104,45 +105,19 @@ export default function GenreView() {
   return (
     <div className="w-full h-full flex flex-col justify-between overflow-y-auto no-scrollbar px-2 py-1">
       <div ref={topRef}>
-        {/* Header with Back Button, Genre Title, and Metadata */}
-        <div className="flex items-center justify-between gap-4 mb-4 pt-1">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/')}
-              className="sc-pill px-3.5 py-1.5 flex items-center gap-1.5 text-xs text-[#F4F4F2] hover:text-white transition cursor-pointer shadow-md"
-              title="Return to Home"
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-              <span>Back</span>
-            </button>
-            <div>
-              <h1 className="font-serif italic text-2xl md:text-3xl font-semibold text-[#F4F4F2] tracking-tight">
-                {title}
-              </h1>
-              <p className="meta-label text-[9px] text-[#8A8A8E] mt-0.5">
-                {meta}
-              </p>
-            </div>
-          </div>
-
+        {/* Standardized PageHeader with Back Button, Genre Title, and Metadata */}
+        <PageHeader
+          title={title}
+          meta={meta}
+          backTo="/"
+          backLabel="Home"
+        >
           {!loading && tracks.length > 0 && (
             <span className="meta-label text-[9px] text-[#1ED760] hidden sm:inline-block">
               {tracks.length} TRACKS LOADED
             </span>
           )}
-        </div>
+        </PageHeader>
 
         {/* Loading Spinner */}
         {loading ? (
@@ -169,9 +144,10 @@ export default function GenreView() {
                   className="sc-card sc-card-hover group p-2.5 rounded-2xl cursor-pointer flex flex-col justify-between transition-all duration-300 relative overflow-hidden"
                 >
                   <div className="relative aspect-square rounded-xl overflow-hidden mb-2 border border-white/10 bg-black/40">
-                    <img
+                    <CoverImage
                       src={track.cover}
-                      alt={track.title}
+                      alt=""
+                      iconSize="w-6 h-6"
                       className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                       loading="lazy"
                     />

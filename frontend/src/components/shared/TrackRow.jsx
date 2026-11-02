@@ -2,6 +2,7 @@ import React from 'react';
 import { Play, Pause, Heart, Plus } from 'lucide-react';
 import { useAudio } from '../../hooks/useAudio';
 import { useLibraryStore } from '../../store/useLibraryStore';
+import CoverImage from './CoverImage';
 
 /**
  * Reusable TrackRow component across Search, Library, Playlist, Genre, Recents & Magic Vibe.
@@ -78,10 +79,10 @@ export default function TrackRow({
       }}
       aria-label={`Play ${track.title} by ${track.artist}`}
       className={`group sc-card sc-card-hover p-2.5 flex items-center justify-between rounded-2xl cursor-pointer transition select-none ${
-        isCurrent ? 'ring-1 ring-[#1ED760]/70 bg-white/[0.09]' : 'hover:bg-white/[0.05]'
+        isCurrent ? 'ring-1 ring-[#1ED760]/80 bg-white/[0.09] shadow-[0_0_16px_rgba(30,215,96,0.14)]' : 'hover:bg-white/[0.05]'
       }`}
     >
-      {/* Left: Index / Equalizer + Cover + Title + Artist */}
+      {/* Left: Index / Equalizer + 48px Cover + Title + Artist */}
       <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
         {showIndex && (
           <div className="w-6 shrink-0 flex items-center justify-center font-mono text-[11px] text-[#8A8A8E]">
@@ -103,26 +104,27 @@ export default function TrackRow({
           </div>
         )}
 
-        {/* Thumbnail Cover */}
-        <div className="relative w-10 h-10 shrink-0 rounded-xl overflow-hidden border border-white/10 bg-black/40">
-          <img
+        {/* 48px Thumbnail Cover */}
+        <div className="relative w-12 h-12 shrink-0 rounded-xl overflow-hidden border border-white/10 bg-black/40">
+          <CoverImage
             src={coverUrl}
-            alt={track.title}
+            alt=""
+            iconSize="w-5 h-5"
             className="w-full h-full object-cover group-hover:scale-105 transition"
             loading="lazy"
           />
         </div>
 
-        {/* Metadata */}
+        {/* Metadata: 2-line wrapped full title */}
         <div className="min-w-0 flex-1">
           <p
-            className={`text-xs font-medium truncate transition ${
+            className={`text-xs sm:text-sm font-medium line-clamp-2 leading-snug break-words transition ${
               isCurrent ? 'text-[#1ED760]' : 'text-[#F4F4F2] group-hover:text-white'
             }`}
           >
             {track.title}
           </p>
-          <div className="flex items-center gap-1.5 text-xs text-[#8A8A8E] truncate">
+          <div className="flex items-center gap-1.5 text-xs text-[#8A8A8E] truncate mt-0.5">
             <span className="truncate">{track.artist}</span>
             {track.reason && (
               <>

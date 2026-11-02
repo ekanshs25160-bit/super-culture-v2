@@ -30,7 +30,7 @@ export default function EmptyState({
 
       {missingEndpoint && (
         <div className="mb-4 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#FACC15] shrink-0" aria-hidden="true"></span>
+          <span className="w-1.5 h-1.5 rounded-full bg-[#1ED760] shrink-0" aria-hidden="true"></span>
           <span className="font-mono text-[10px] text-[#8A8A8E] truncate">
             Backend Requirement: <span className="text-[#F4F4F2]">{missingEndpoint}</span>
           </span>
