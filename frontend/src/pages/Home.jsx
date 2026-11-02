@@ -7,7 +7,7 @@ import BottomDiscoveryRow from '../components/BottomDiscoveryRow';
  */
 export default function Home() {
   return (
-    <div className="flex-1 flex flex-col justify-end w-full min-h-0 overflow-hidden pb-1">
+    <div className="flex-1 flex flex-col justify-end w-full min-h-0 overflow-hidden pb-24 sm:pb-28">
       <BottomDiscoveryRow />
     </div>
   );

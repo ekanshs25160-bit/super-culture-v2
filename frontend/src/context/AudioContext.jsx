@@ -193,6 +193,18 @@ export const AudioProvider = ({ children }) => {
 
     setIsPlaying(true);
     showToast(`Playing: ${track.title} — ${track.artist}`);
+
+    try {
+      const stored = localStorage.getItem('super_culture_playback_history');
+      const hist = stored ? JSON.parse(stored) : [];
+      const id = track.videoId || track.id;
+      const historyItem = { ...track, playedAt: Date.now() };
+      const filtered = Array.isArray(hist) ? hist.filter((t) => (t.videoId || t.id) !== id) : [];
+      localStorage.setItem('super_culture_playback_history', JSON.stringify([historyItem, ...filtered].slice(0, 50)));
+      window.dispatchEvent(new Event('super_culture_history_updated'));
+    } catch (e) {
+      console.warn('[AudioContext] Could not save history:', e);
+    }
   }, [isEmptyPlayer, showToast]);
 
   const playTrack = playSelectedTrack;

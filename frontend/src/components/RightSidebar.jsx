@@ -54,7 +54,7 @@ export default function RightSidebar() {
   };
 
   return (
-    <aside className="w-full flex flex-col gap-3 pointer-events-auto h-full min-h-0 overflow-y-auto no-scrollbar">
+    <aside className="h-full min-h-0 overflow-y-auto no-scrollbar flex flex-col gap-3 w-full pointer-events-auto">
       {/* CARD A: FRIEND ACTIVITY CARD */}
       <section className="sc-card sc-card-hover p-4 shrink-0">
         <div className="flex items-center justify-between mb-3">
