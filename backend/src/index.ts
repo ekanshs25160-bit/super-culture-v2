@@ -9,7 +9,7 @@ import apiRouter from './routes/index.js';
 
 const app = express();
 const server = http.createServer(app);
-
+const PORT = process.env.PORT || 5001;
 // Global Middleware
 app.use(cors({ origin: '*' })); // You can lock this down to your Vercel URL later
 app.use(express.json());
@@ -38,7 +38,7 @@ try {
 socketService.initialize(server);
 
 // Start HTTP & WS Server
-server.listen(env.port, env.host, () => {
+server.listen(PORT as number, '0.0.0.0', () => {
   console.log(`\n==================================================`);
   console.log(`  Super Culture v2.0 Backend Server Running`);
   console.log(`  Local URL:   http://${env.host}:${env.port}`);
