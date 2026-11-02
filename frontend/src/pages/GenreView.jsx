@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useAudio } from '../hooks/useAudio';
+import { INITIAL_TRACK_QUEUE, TRENDING_TRACKS } from '../data/tracks';
 
 export default function GenreView() {
   const { genreId } = useParams();
@@ -70,9 +71,9 @@ export default function GenreView() {
           setTracks(normalized);
         }
       } catch (err) {
-        console.error('[GenreView] Fetch error:', err);
+        console.warn('[GenreView] Fetch error, using offline seed tracks:', err);
         if (isMounted) {
-          setTracks([]);
+          setTracks([...INITIAL_TRACK_QUEUE, ...TRENDING_TRACKS]);
         }
       } finally {
         if (isMounted) {

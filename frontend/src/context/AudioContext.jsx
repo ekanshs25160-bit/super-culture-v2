@@ -58,7 +58,7 @@ export const AudioProvider = ({ children }) => {
   const [isRepeat, setIsRepeat] = useState(Boolean(initialState.isRepeat));
   const [isEmptyPlayer, setIsEmptyPlayer] = useState(false);
 
-  // App-level interactive state from index3.html
+  // App-level interactive state
   const [isLiked, setIsLiked] = useState(true);
   const [isAiDjActive, setIsAiDjActive] = useState(false);
   const [privacyMode, setPrivacyModeState] = useState('public');

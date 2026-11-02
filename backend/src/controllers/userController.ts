@@ -23,9 +23,15 @@ export class UserController {
         user = { id: userId, name: 'Super Culture Listener', mode: 'public', mood: 'energetic' };
       }
 
-      // Liked songs count
+      // Liked songs
+      const likedSongs = db.prepare(`
+        SELECT video_id as videoId, title, artist, thumbnail_url as thumbnailUrl, duration
+        FROM liked_songs
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+      `).all(userId) as any[];
       const likedCountRow = db.prepare('SELECT COUNT(*) as count FROM liked_songs WHERE user_id = ?').get(userId) as any;
-      const likedCount = likedCountRow?.count || 874; // Fallback to 874 from PRD reference
+      const likedCount = likedCountRow?.count || (likedSongs.length > 0 ? likedSongs.length : 874);
 
       // User Playlists
       const playlists = db.prepare(`
@@ -43,6 +49,7 @@ export class UserController {
           mood: user.mood,
         },
         likedSongsCount: likedCount,
+        likedSongs,
         playlists,
       });
     } catch (error: any) {
@@ -148,21 +155,30 @@ export class UserController {
   public async updateMood(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req.headers['x-guest-id'] as string) || 'default-user';
-      const { mood } = req.body;
+      const { mood, mode } = req.body;
+      const db = getDatabase();
 
-      const validMoods = ['energetic', 'chill', 'melancholy', 'focus'];
-      if (!validMoods.includes(mood)) {
-        res.status(400).json({ error: 'Invalid mood value' });
-        return;
+      // Ensure user exists
+      let user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+      if (!user) {
+        db.prepare(`
+          INSERT INTO users (id, name, mode, mood)
+          VALUES (?, 'Super Culture Listener', 'public', 'energetic')
+        `).run(userId);
       }
 
-      const db = getDatabase();
-      db.prepare('UPDATE users SET mood = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(mood, userId);
+      if (mood) {
+        db.prepare('UPDATE users SET mood = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(mood.toLowerCase(), userId);
+      }
+      if (mode) {
+        db.prepare('UPDATE users SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(mode.toLowerCase(), userId);
+      }
 
-      res.json({ mood, message: `Mood updated to ${mood}` });
+      const updated = db.prepare('SELECT mood, mode FROM users WHERE id = ?').get(userId) as any;
+      res.json({ mood: updated?.mood, mode: updated?.mode, message: 'User state updated' });
     } catch (error: any) {
       console.error('[UserController] updateMood error:', error);
-      res.status(500).json({ error: 'Failed to update mood' });
+      res.status(500).json({ error: 'Failed to update user mood/mode' });
     }
   }
 }

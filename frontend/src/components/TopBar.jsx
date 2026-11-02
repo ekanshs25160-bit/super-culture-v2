@@ -1,5 +1,10 @@
-import { useContext, useEffect, useRef } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Sparkles, Bell, Settings, Maximize2, Globe, Lock } from 'lucide-react';
 import { AudioContext } from '../context/AudioContext';
+import { useLibraryStore } from '../store/useLibraryStore';
+import { apiClient } from '../services/api';
+import { NotificationsPopover, QuickSettingsPopover } from './TopBarPopovers';
 
 export default function TopBar() {
   const {
@@ -8,23 +13,59 @@ export default function TopBar() {
     toggleAiDj,
     privacyMode,
     setPrivacyMode,
+    playTrack,
   } = useContext(AudioContext);
 
-  const searchInputRef = useRef(null);
+  const { mode, setMode } = useLibraryStore();
 
-  // ⌘K shortcut listener
+  const navigate = useNavigate();
+  const searchInputRef = useRef(null);
+  const [searchVal, setSearchVal] = useState('');
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  const notifRef = useRef(null);
+  const settingsRef = useRef(null);
+
+  // ⌘K shortcut listener & click-outside to close popovers
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        if (searchInputRef.current) {
-          searchInputRef.current.focus();
-        }
+        searchInputRef.current?.focus();
+      }
+      if (e.key === 'Escape') {
+        setIsNotifOpen(false);
+        setIsSettingsOpen(false);
       }
     };
+
+    const handleClickOutside = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setIsNotifOpen(false);
+      }
+      if (settingsRef.current && !settingsRef.current.contains(e.target)) {
+        setIsSettingsOpen(false);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    if (searchVal.trim()) {
+      navigate(`/search?q=${encodeURIComponent(searchVal.trim())}`);
+    } else {
+      navigate('/search');
+    }
+  };
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -36,15 +77,49 @@ export default function TopBar() {
     }
   };
 
+  const handleAiDjClick = async () => {
+    if (!isAiDjActive) {
+      setIsAiLoading(true);
+      toggleAiDj();
+      showToast('AI DJ initializing smart queue...');
+      try {
+        const recs = await apiClient.ai.getAIDJ();
+        if (Array.isArray(recs) && recs.length > 0) {
+          const rec = recs[0];
+          playTrack({
+            id: `ai-dj-${Date.now()}`,
+            videoId: 'MV_3Dpw-BRY',
+            title: rec.title,
+            artist: `${rec.artist} • ${rec.reason || 'AI DJ Mix'}`,
+            cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=544&h=544&fit=crop',
+            duration: '3:30',
+            seconds: 210,
+          });
+          showToast(`AI DJ: Now Playing ${rec.title}`);
+        }
+      } catch (err) {
+        console.warn('AI DJ error:', err);
+      } finally {
+        setIsAiLoading(false);
+      }
+    } else {
+      toggleAiDj();
+      showToast('AI DJ Paused');
+    }
+  };
+
   const getTelemetryStatus = () => {
     if (isAiDjActive) {
       return 'AI DJ ACTIVE • MIXING ARCHIVE CUTS';
     }
-    if (privacyMode === 'private') {
+    const currentMode = mode || privacyMode;
+    if (currentMode === 'private') {
       return 'PRIVATE SESSION • INCOGNITO AUDIO';
     }
     return 'PUBLIC MODE • CURATED ARCHIVE';
   };
+
+  const currentMode = mode || privacyMode;
 
   return (
     <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 px-5 pt-2 pb-2">
@@ -52,7 +127,7 @@ export default function TopBar() {
       <div className="flex items-center gap-2.5 flex-wrap">
         {/* Round White Editorial Logo */}
         <button
-          onClick={() => showToast('Super Culture Audio Engine • Home View')}
+          onClick={() => navigate('/')}
           title="Super Culture Home"
           className="w-10 h-10 rounded-full bg-[#F4F4F2] text-[#0B0B0C] flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform cursor-pointer"
         >
@@ -63,33 +138,39 @@ export default function TopBar() {
           </svg>
         </button>
 
-        {/* Frosted Pill Search Input */}
-        <div className="sc-pill flex items-center gap-2.5 px-4 h-10 w-[240px] sm:w-[310px] focus-within:border-white/30 focus-within:bg-black/80">
-          <svg className="w-4 h-4 text-[#8A8A8E] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="7" />
-            <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
-          </svg>
+        {/* Frosted Pill Search Input Form */}
+        <form
+          onSubmit={handleSearchSubmit}
+          className="sc-pill flex items-center gap-2.5 px-4 h-10 w-[240px] sm:w-[310px] focus-within:border-white/30 focus-within:bg-black/80"
+        >
+          <Search className="w-4 h-4 text-[#8A8A8E] shrink-0" aria-hidden="true" />
           <input
             ref={searchInputRef}
             id="global-search"
             type="text"
+            value={searchVal}
+            onChange={(e) => setSearchVal(e.target.value)}
             placeholder="What do you want to play?"
+            aria-label="Global music search"
             className="bg-transparent border-none outline-none text-xs text-[#F4F4F2] placeholder-[#8A8A8E] w-full font-normal"
           />
           <kbd className="hidden sm:inline-block meta-label text-[9px] text-[#8A8A8E] bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
             ⌘K
           </kbd>
-        </div>
+        </form>
 
         {/* Green "Start AI DJ" Pill with Sparkle Icon */}
         <button
           id="ai-dj-btn"
-          onClick={toggleAiDj}
+          onClick={handleAiDjClick}
+          aria-label={isAiDjActive ? 'Pause AI DJ' : 'Start AI DJ'}
           className="h-10 px-4 rounded-full bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] font-medium text-xs flex items-center gap-2 shadow-[0_0_24px_rgba(30,215,96,0.35)] hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
         >
-          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-            <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
-          </svg>
+          {isAiLoading ? (
+            <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Sparkles className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
+          )}
           <span id="ai-dj-label" className="font-semibold tracking-tight">
             {isAiDjActive ? 'AI DJ Live' : 'Start AI DJ'}
           </span>
@@ -98,7 +179,7 @@ export default function TopBar() {
 
       {/* Center Active Mode Pill (Dark OLED Pill) */}
       <div id="ai-status-banner" className="hidden lg:flex items-center gap-2.5 px-3.5 py-1.5 sc-pill shadow-[0_4px_20px_rgba(0,0,0,0.85)]">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#1ED760] glow-green-sm animate-pulse"></span>
+        <span className="w-1.5 h-1.5 rounded-full bg-[#1ED760] glow-green-sm animate-pulse" aria-hidden="true" />
         <span id="mode-telemetry" className="meta-label text-[#F4F4F2]/90">
           {getTelemetryStatus()}
         </span>
@@ -110,89 +191,105 @@ export default function TopBar() {
         <div className="sc-pill p-1 flex items-center h-10">
           <button
             id="btn-mode-public"
-            onClick={() => setPrivacyMode('public')}
+            onClick={() => {
+              setMode('public');
+              setPrivacyMode('public');
+            }}
+            aria-label="Set session mode to public"
             className={`h-8 px-3.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-              privacyMode === 'public'
-                ? 'bg-[#F4F4F2] text-[#0B0B0C] shadow-sm'
+              currentMode === 'public'
+                ? 'bg-[#F4F4F2] text-[#0B0B0C] shadow-sm font-semibold'
                 : 'text-[#8A8A8E] hover:text-[#F4F4F2]'
             }`}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 18V5l12-2v13" />
-              <circle cx="6" cy="18" r="3" />
-              <circle cx="18" cy="16" r="3" />
-            </svg>
+            <Globe className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Public</span>
           </button>
           <button
             id="btn-mode-private"
-            onClick={() => setPrivacyMode('private')}
+            onClick={() => {
+              setMode('private');
+              setPrivacyMode('private');
+            }}
+            aria-label="Set session mode to private"
             className={`h-8 px-3.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-              privacyMode === 'private'
-                ? 'bg-[#F4F4F2] text-[#0B0B0C] shadow-sm'
+              currentMode === 'private'
+                ? 'bg-[#F4F4F2] text-[#0B0B0C] shadow-sm font-semibold'
                 : 'text-[#8A8A8E] hover:text-[#F4F4F2]'
             }`}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
-              <rect x="4" y="11" width="16" height="9" rx="2" />
-              <path strokeLinecap="round" d="M8 11V7a4 4 0 018 0v4" />
-            </svg>
+            <Lock className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Private</span>
           </button>
         </div>
 
-        {/* Dark Utility Pill */}
-        <div className="sc-pill h-10 px-2.5 flex items-center gap-2">
-          {/* Notification Bell with Green Dot */}
-          <button
-            onClick={() => showToast('3 new vinyl drops & 2 Jam Room invites')}
-            title="Notifications"
-            className="relative w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
-            </svg>
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#1ED760] ring-2 ring-[#141416]"></span>
-          </button>
+        {/* Dark Utility Pill with Popovers */}
+        <div className="relative flex items-center gap-2">
+          <div className="sc-pill h-10 px-2.5 flex items-center gap-2">
+            {/* Notification Bell with Popover Trigger */}
+            <div ref={notifRef} className="relative">
+              <button
+                onClick={() => {
+                  setIsNotifOpen((prev) => !prev);
+                  setIsSettingsOpen(false);
+                }}
+                aria-label="Notifications"
+                className="relative w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
+              >
+                <Bell className="w-4 h-4" aria-hidden="true" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#1ED760] ring-2 ring-[#141416]" />
+              </button>
 
-          {/* Settings Gear */}
-          <button
-            onClick={() => showToast('Audio Settings: 24-Bit/96kHz CoreAudio Output')}
-            title="Settings"
-            className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="3" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
-            </svg>
-          </button>
+              {/* Glass Notifications Popover */}
+              {isNotifOpen && <NotificationsPopover />}
+            </div>
 
-          {/* User Avatar */}
-          <button
-            onClick={() => showToast('Signed in as Sora Takahashi • Super Culture Member')}
-            title="Profile: Sora Takahashi"
-            className="w-7 h-7 rounded-full overflow-hidden border border-white/25 hover:border-[#1ED760] transition cursor-pointer"
-          >
-            <img
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80"
-              alt="User Avatar"
-              className="w-full h-full object-cover grayscale contrast-125"
-            />
-          </button>
+            {/* Settings Gear with Popover Trigger */}
+            <div ref={settingsRef} className="relative">
+              <button
+                onClick={() => {
+                  setIsSettingsOpen((prev) => !prev);
+                  setIsNotifOpen(false);
+                }}
+                aria-label="Settings"
+                className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
+              >
+                <Settings className="w-4 h-4" aria-hidden="true" />
+              </button>
+
+              {/* Glass Settings Popover */}
+              {isSettingsOpen && (
+                <QuickSettingsPopover
+                  currentMode={currentMode}
+                  onClose={() => setIsSettingsOpen(false)}
+                />
+              )}
+            </div>
+
+            {/* User Avatar */}
+            <button
+              onClick={() => navigate('/library')}
+              aria-label="Go to library profile"
+              className="w-7 h-7 rounded-full overflow-hidden border border-white/25 hover:border-[#1ED760] transition cursor-pointer"
+            >
+              <img
+                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80"
+                alt="User Profile"
+                className="w-full h-full object-cover grayscale contrast-125"
+              />
+            </button>
+          </div>
         </div>
 
         {/* Separate Circular Fullscreen Button */}
         <button
           onClick={toggleFullscreen}
-          title="Toggle Fullscreen"
+          aria-label="Toggle Fullscreen"
           className="sc-pill w-10 h-10 flex items-center justify-center text-[#F4F4F2]/80 hover:text-white cursor-pointer"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-          </svg>
+          <Maximize2 className="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
     </header>
   );
 }
-
