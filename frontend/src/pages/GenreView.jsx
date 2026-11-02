@@ -3,6 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useAudio } from '../hooks/useAudio';
 import { INITIAL_TRACK_QUEUE, TRENDING_TRACKS } from '../data/tracks';
 import { PageHeader, CoverImage } from '../components/shared';
+import { API_BASE } from '../services/api';
 
 export default function GenreView() {
   const { genreId } = useParams();
@@ -37,7 +38,7 @@ export default function GenreView() {
       setCurrentPage(1);
       try {
         const res = await fetch(
-          `/api/music/search?q=${encodeURIComponent(query)}&limit=40`
+          `${API_BASE}/api/music/search?q=${encodeURIComponent(query)}&limit=40`
         );
 
         // Catch non-200 responses cleanly to avoid parsing HTML as JSON
@@ -47,9 +48,15 @@ export default function GenreView() {
         }
 
         const json = await res.json();
-        const rawList = Array.isArray(json)
+        const rawList = Array.isArray(json.tracks)
+          ? json.tracks
+          : Array.isArray(json.data)
+          ? json.data
+          : Array.isArray(json.data?.tracks)
+          ? json.data.tracks
+          : Array.isArray(json)
           ? json
-          : json.results || json.tracks || [];
+          : [];
 
         // Normalize fetched data so every track has cover and videoId
         const normalized = rawList.map((t) => ({

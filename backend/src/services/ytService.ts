@@ -2,215 +2,315 @@ import { Innertube, UniversalCache } from 'youtubei.js';
 import { LRUCache } from 'lru-cache';
 import { TrackMeta, StreamEntry, ArtistMeta, SearchResultPayload } from '../types/index.js';
 
-let yt: Innertube;
+let ytInstance: Innertube | null = null;
 
-export const initYouTube = async (): Promise<Innertube> => {
-  if (!yt) {
-    yt = await Innertube.create({
+export const getYtClient = async (): Promise<Innertube> => {
+  if (!ytInstance) {
+    ytInstance = await Innertube.create({
       cache: new UniversalCache(false),
       generate_session_locally: true,
-      // CRITICAL: Force the client to YouTube Music to avoid standard YT 403 blocks
-      client_type: 'WEB_REMIX' as any,
     });
-    console.log('[YouTubeService] Innertube client initialized with WEB_REMIX.');
+    console.log('[ytService] Innertube client initialized.');
   }
-  return yt;
+  return ytInstance;
+};
+
+// Helper to recursively extract MusicResponsiveListItem / Video / MusicShelf nodes from any youtubei.js response
+export const extractItemsFromShelves = (node: any): any[] => {
+  if (!node) return [];
+  if (Array.isArray(node)) return node.flatMap(extractItemsFromShelves);
+  if (Array.isArray(node.contents)) return node.contents.flatMap(extractItemsFromShelves);
+  if (Array.isArray(node.items)) return node.items.flatMap(extractItemsFromShelves);
+  if (Array.isArray(node.sections)) return node.sections.flatMap(extractItemsFromShelves);
+  if (node.id || node.video_id || node.videoId || node.title || node.flex_columns) return [node];
+  return [];
+};
+
+export const upscaleThumbnail = (url?: string): string => {
+  if (!url) return 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop';
+  return url.replace(/=w\d+-h\d+.*$/, '=w544-h544-l90-rj');
+};
+
+export const normalizeTrackItem = (item: any): TrackMeta | null => {
+  if (!item) return null;
+  const videoId =
+    item.id ||
+    item.video_id ||
+    item.videoId ||
+    item.endpoint?.payload?.videoId ||
+    item.on_tap?.payload?.videoId ||
+    item.overlay?.content?.endpoint?.payload?.videoId;
+
+  if (!videoId || typeof videoId !== 'string') return null;
+
+  const title =
+    typeof item.title === 'string'
+      ? item.title
+      : item.title?.text ||
+        item.flex_columns?.[0]?.title?.text ||
+        item.headline?.text ||
+        'Unknown Title';
+
+  const artist =
+    item.artists?.[0]?.name ||
+    item.author?.name ||
+    (typeof item.author === 'string' ? item.author : null) ||
+    item.subtitle?.runs?.[0]?.text ||
+    item.flex_columns?.[1]?.title?.runs?.[0]?.text ||
+    'Unknown Artist';
+
+  const thumbnails =
+    item.thumbnails ||
+    item.thumbnail?.contents ||
+    item.thumbnail ||
+    [];
+  const rawThumb = Array.isArray(thumbnails) && thumbnails.length > 0
+    ? thumbnails[thumbnails.length - 1]?.url || thumbnails[0]?.url
+    : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+  const upscaled = upscaleThumbnail(rawThumb);
+
+  const durationText =
+    item.duration?.text ||
+    item.length_text?.text ||
+    (typeof item.duration === 'string' ? item.duration : '3:30');
+
+  const durationSeconds =
+    typeof item.duration?.seconds === 'number'
+      ? item.duration.seconds
+      : typeof item.duration === 'number'
+      ? item.duration
+      : 210;
+
+  return {
+    id: videoId,
+    videoId,
+    title: typeof title === 'string' ? title : String(title),
+    artist: typeof artist === 'string' ? artist : String(artist),
+    cover: upscaled,
+    albumArt: upscaled,
+    thumbnail_url: upscaled,
+    thumbnailUrl: upscaled,
+    duration: durationSeconds,
+    durationFormatted: durationText,
+    album: item.album?.name,
+  };
+};
+
+export const searchMusicCatalog = async (query: string, limit = 40): Promise<SearchResultPayload> => {
+  const yt = await getYtClient();
+  const tracks: TrackMeta[] = [];
+  const artists: ArtistMeta[] = [];
+  const seenIds = new Set<string>();
+
+  // 1. Try YouTube Music Song Search first
+  try {
+    const songSearch: any = await yt.music.search(query, { type: 'song' });
+    const rawSongs = [
+      ...extractItemsFromShelves(songSearch?.songs),
+      ...extractItemsFromShelves(songSearch?.contents),
+    ];
+
+    for (const item of rawSongs) {
+      const normalized = normalizeTrackItem(item);
+      if (normalized && !seenIds.has(normalized.videoId)) {
+        seenIds.add(normalized.videoId);
+        tracks.push(normalized);
+      }
+    }
+  } catch (err) {
+    console.warn('[ytService] yt.music song search failed, falling back to yt.search:', err);
+  }
+
+  // 2. Fallback to standard YouTube search if YT Music returned 0 tracks (common on Render IPs)
+  if (tracks.length === 0) {
+    try {
+      const stdSearch: any = await yt.search(query, { type: 'video' });
+      const rawVideos = stdSearch?.videos || stdSearch?.results || extractItemsFromShelves(stdSearch);
+
+      for (const item of rawVideos) {
+        const normalized = normalizeTrackItem(item);
+        if (normalized && !seenIds.has(normalized.videoId)) {
+          seenIds.add(normalized.videoId);
+          tracks.push(normalized);
+        }
+      }
+    } catch (fallbackErr) {
+      console.warn('[ytService] Standard YouTube search fallback failed, trying general music search:', fallbackErr);
+      try {
+        const generalMusic: any = await yt.music.search(query);
+        const rawGeneral = extractItemsFromShelves(generalMusic);
+        for (const item of rawGeneral) {
+          const normalized = normalizeTrackItem(item);
+          if (normalized && !seenIds.has(normalized.videoId)) {
+            seenIds.add(normalized.videoId);
+            tracks.push(normalized);
+          }
+        }
+      } catch (genErr) {
+        console.error('[ytService] All search attempts failed:', genErr);
+      }
+    }
+  }
+
+  // 3. Extract matching Artists
+  try {
+    const artistSearch: any = await yt.music.search(query, { type: 'artist' });
+    const rawArtists = [
+      ...extractItemsFromShelves(artistSearch?.artists),
+      ...extractItemsFromShelves(artistSearch?.contents),
+    ];
+
+    const seenArtists = new Set<string>();
+    for (const item of rawArtists) {
+      const name =
+        typeof item.name === 'string'
+          ? item.name
+          : item.title?.text || item.flex_columns?.[0]?.title?.text;
+      if (!name || seenArtists.has(name.toLowerCase())) continue;
+
+      const thumbs = item.thumbnails || item.thumbnail?.contents || item.thumbnail || [];
+      const rawThumb = Array.isArray(thumbs) && thumbs.length > 0 ? thumbs[thumbs.length - 1]?.url : null;
+      const avatar = upscaleThumbnail(rawThumb);
+
+      seenArtists.add(name.toLowerCase());
+      artists.push({
+        id: item.id || item.endpoint?.payload?.browseId || name,
+        name,
+        avatar: avatar || tracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+        role: item.subscribers?.text || 'Artist',
+      });
+      if (artists.length >= 8) break;
+    }
+  } catch (artistErr) {
+    console.warn('[ytService] Artist search failed:', artistErr);
+  }
+
+  // Derive unique artists from tracks if artist search returns empty
+  if (artists.length === 0 && tracks.length > 0) {
+    const seen = new Set<string>();
+    for (const t of tracks) {
+      const cleanName = t.artist?.split(/[,&]|feat\.|ft\./i)[0]?.trim();
+      if (cleanName && !seen.has(cleanName.toLowerCase())) {
+        seen.add(cleanName.toLowerCase());
+        artists.push({
+          id: cleanName,
+          name: cleanName,
+          avatar: t.cover || '',
+          role: 'Artist',
+        });
+      }
+      if (artists.length >= 8) break;
+    }
+  }
+
+  const slicedTracks = tracks.slice(0, limit);
+  return {
+    tracks: slicedTracks,
+    artists: artists.slice(0, 8),
+    results: slicedTracks,
+  };
 };
 
 export class YouTubeService {
   private streamCache: LRUCache<string, StreamEntry>;
 
   constructor() {
-    // 4 hours TTL LRU cache matching PRD spec
     this.streamCache = new LRUCache<string, StreamEntry>({
       max: 500,
       ttl: 1000 * 60 * 60 * 4,
     });
   }
 
-  /**
-   * Lazy-initialize YouTube.js client
-   */
   public async getClient(): Promise<Innertube> {
-    return initYouTube();
+    return getYtClient();
   }
 
-  /**
-   * Enforces PRD high-fashion editorial 544x544 upscaled artwork
-   */
   public upscaleThumbnail(url?: string): string {
-    if (!url) return 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop';
-    return url.replace(/=w\d+-h\d+.*$/, '=w544-h544-l90-rj');
+    return upscaleThumbnail(url);
   }
 
-  /**
-   * Search both artists and tracks in parallel via YouTube Music
-   */
-  public async search(query: string, limit: number = 40): Promise<SearchResultPayload> {
-    const client = await this.getClient();
-
-    const [songRes, artistRes] = await Promise.all([
-      client.music.search(query, { type: 'song' }).catch(() => null),
-      client.music.search(query, { type: 'artist' }).catch(() => null),
-    ]);
-
-    // Parse artists
-    const rawArtists: any[] = [...(artistRes?.artists?.contents || (artistRes?.contents?.[0] as any)?.contents || artistRes?.contents || [])];
-    const artists: ArtistMeta[] = [];
-    for (const item of rawArtists) {
-      if (!item) continue;
-      const id = item.id || item.endpoint?.payload?.browseId;
-      const name = item.name || item.title?.text || item.title;
-      if (!name) continue;
-
-      const rawThumb = item.thumbnails?.[0]?.url || item.thumbnail?.contents?.[0]?.url;
-      const avatar = this.upscaleThumbnail(rawThumb);
-      const subscribers = item.subscribers?.text || item.subscribers || '';
-
-      artists.push({
-        id: id || name,
-        name: typeof name === 'string' ? name : String(name),
-        subscribers: typeof subscribers === 'string' ? subscribers : '',
-        avatar,
-        role: subscribers || 'Artist',
-      });
-      if (artists.length >= 8) break;
-    }
-
-    // Parse tracks
-    const rawItems: any[] = [...(songRes?.songs?.contents || (songRes?.contents?.[0] as any)?.contents || songRes?.contents || [])];
-
-    let currentContinuation: any = songRes;
-    while (rawItems.length < limit && currentContinuation?.has_continuation && typeof currentContinuation.getContinuation === 'function') {
-      try {
-        const nextContinuation = await currentContinuation.getContinuation();
-        const nextItems = nextContinuation.contents?.contents || nextContinuation.songs?.contents || nextContinuation.contents || [];
-        if (!nextItems.length) break;
-        rawItems.push(...nextItems);
-        currentContinuation = nextContinuation;
-      } catch (err) {
-        console.warn('[YouTubeService] Error fetching search continuation:', err);
-        break;
-      }
-    }
-
-    const tracks: TrackMeta[] = [];
-    for (const item of rawItems) {
-      if (!item) continue;
-      const song = item as any;
-      const id = song.id || song.videoId;
-      if (!id) continue;
-
-      const rawThumb = song.thumbnails?.[0]?.url || song.thumbnail?.contents?.[0]?.url;
-      const upscaled = this.upscaleThumbnail(rawThumb);
-      tracks.push({
-        id: id,
-        videoId: id,
-        title: song.title?.text || song.title || 'Unknown Title',
-        artist: song.artists?.[0]?.name || song.author?.name || 'Unknown Artist',
-        cover: upscaled,
-        duration: song.duration?.seconds,
-        durationFormatted: song.duration?.text || '3:30',
-        thumbnailUrl: upscaled,
-        album: song.album?.name,
-      });
-
-      if (tracks.length >= limit) break;
-    }
-
-    return { artists, tracks, results: tracks };
+  public async search(query: string, limit = 40): Promise<SearchResultPayload> {
+    return searchMusicCatalog(query, limit);
   }
 
-  /**
-   * Search tracks via YouTube Music (delegates to search)
-   */
-  public async searchTracks(query: string, limit: number = 40): Promise<TrackMeta[]> {
-    const res = await this.search(query, limit);
+  public async searchTracks(query: string, limit = 40): Promise<TrackMeta[]> {
+    const res = await searchMusicCatalog(query, limit);
     return res.tracks;
   }
 
-  /**
-   * Fetch an artist's official discography via YouTube Music artist lookup
-   */
-  public async getArtistDiscography(artistName: string, limit: number = 60): Promise<TrackMeta[]> {
-    const client = await this.getClient();
-    const searchResults: any = await client.music.search(artistName, { type: 'artist' });
+  public async getArtistDiscography(artistName: string, limit = 60): Promise<TrackMeta[]> {
+    const yt = await getYtClient();
+    let tracks: TrackMeta[] = [];
+    const seenIds = new Set<string>();
 
-    const artistList: any[] =
-      searchResults.artists?.contents ||
-      searchResults.artists ||
-      searchResults.contents?.[0]?.contents ||
-      [];
+    try {
+      const searchResults: any = await yt.music.search(artistName, { type: 'artist' });
+      const rawArtists = [
+        ...extractItemsFromShelves(searchResults?.artists),
+        ...extractItemsFromShelves(searchResults?.contents),
+      ];
+      const artistId = rawArtists[0]?.id || rawArtists[0]?.endpoint?.payload?.browseId;
 
-    const firstArtist = artistList[0];
-    const artistId = firstArtist?.id;
-    if (!artistId) {
-      return [];
-    }
+      if (artistId) {
+        const artistProfile: any = await yt.music.getArtist(artistId);
+        const songsShelf =
+          artistProfile.sections?.find((s: any) => s.type === 'MusicShelf') ||
+          artistProfile.top_songs ||
+          artistProfile.songs;
 
-    const artistProfile: any = await client.music.getArtist(artistId);
-    const officialName = firstArtist?.name || artistName;
-
-    const songsShelf =
-      artistProfile.sections?.find((s: any) => s.type === 'MusicShelf') ||
-      artistProfile.top_songs ||
-      artistProfile.songs;
-
-    let rawSongs: any[] = [];
-    const browseId = songsShelf?.endpoint?.payload?.browseId;
-
-    if (browseId) {
-      try {
-        const playlist: any = await client.music.getPlaylist(browseId);
-        if (Array.isArray(playlist?.items) && playlist.items.length > 0) {
-          rawSongs = playlist.items;
+        let rawSongs: any[] = [];
+        const browseId = songsShelf?.endpoint?.payload?.browseId;
+        if (browseId) {
+          try {
+            const playlist: any = await yt.music.getPlaylist(browseId);
+            if (Array.isArray(playlist?.items) && playlist.items.length > 0) {
+              rawSongs = playlist.items;
+            }
+          } catch {
+            // Use shelf contents if playlist expansion fails
+          }
         }
-      } catch (err) {
-        console.warn('[YouTubeService] Could not expand artist songs playlist, using shelf contents:', err);
+
+        if (rawSongs.length === 0) {
+          rawSongs = extractItemsFromShelves(songsShelf || artistProfile);
+        }
+
+        for (const item of rawSongs) {
+          const normalized = normalizeTrackItem(item);
+          if (normalized && !seenIds.has(normalized.videoId)) {
+            seenIds.add(normalized.videoId);
+            tracks.push(normalized);
+          }
+          if (tracks.length >= limit) break;
+        }
       }
+    } catch (profileErr) {
+      console.warn('[ytService] getArtist profile lookup failed:', profileErr);
     }
 
-    if (rawSongs.length === 0) {
-      rawSongs =
-        songsShelf?.contents ||
-        artistProfile.top_songs?.contents ||
-        artistProfile.songs?.contents ||
-        artistProfile.top_songs ||
-        artistProfile.songs ||
-        [];
-    }
-
-    const tracks: TrackMeta[] = [];
-    for (const item of rawSongs) {
-      if (!item) continue;
-      const song = item as any;
-      const id = song.id || song.videoId;
-      if (!id) continue;
-
-      const rawThumb = song.thumbnails?.[0]?.url || song.thumbnail?.contents?.[0]?.url;
-      const upscaled = this.upscaleThumbnail(rawThumb);
-
-      tracks.push({
-        id,
-        videoId: id,
-        title: song.title?.text || song.title || 'Unknown Title',
-        artist: song.artists?.[0]?.name || song.author?.name || officialName,
-        cover: upscaled,
-        duration: song.duration?.seconds,
-        durationFormatted: song.duration?.text || '3:30',
-        thumbnailUrl: upscaled,
-        album: song.album?.name,
-      });
-
-      if (tracks.length >= limit) break;
+    // Fallback if yt.music.getArtist() fails or returns fewer than 5 tracks
+    if (tracks.length < 5) {
+      try {
+        const fallbackRes = await searchMusicCatalog(`${artistName} official audio`, limit);
+        const nameLower = artistName.toLowerCase();
+        for (const t of fallbackRes.tracks) {
+          if (!seenIds.has(t.videoId)) {
+            seenIds.add(t.videoId);
+            // Prioritize tracks matching artist name, or append
+            if (t.artist.toLowerCase().includes(nameLower) || tracks.length < 5) {
+              tracks.push(t);
+            }
+          }
+          if (tracks.length >= limit) break;
+        }
+      } catch (fallbackErr) {
+        console.error('[ytService] Artist discography fallback search failed:', fallbackErr);
+      }
     }
 
     return tracks;
   }
 
-  /**
-   * Resolve audio stream URL with LRU caching
-   */
   public async resolveAudioStream(videoId: string): Promise<StreamEntry> {
     const cached = this.streamCache.get(videoId);
     if (cached && cached.expiresAt > Date.now()) {
@@ -218,7 +318,12 @@ export class YouTubeService {
     }
 
     const client = await this.getClient();
-    const info = await client.music.getInfo(videoId);
+    let info: any;
+    try {
+      info = await client.music.getInfo(videoId);
+    } catch {
+      info = await client.getInfo(videoId);
+    }
 
     const format = info.chooseFormat({
       type: 'audio',
@@ -235,20 +340,16 @@ export class YouTubeService {
       url: streamUrl,
       mimeType: format.mime_type || 'audio/mp4',
       bitrate: format.bitrate,
-      expiresAt: Date.now() + 1000 * 60 * 60 * 3.5, // 3.5 hours conservative expiration
+      expiresAt: Date.now() + 1000 * 60 * 60 * 3.5,
     };
 
     this.streamCache.set(videoId, entry);
     return entry;
   }
 
-  /**
-   * Fetch Watch Next / Radio playlist for "PLAYING NEXT" pill
-   */
   public async getUpNext(videoId: string): Promise<TrackMeta[]> {
     const client = await this.getClient();
     const upNext = await client.music.getUpNext(videoId);
-
     const tracks: TrackMeta[] = [];
     const contents = upNext.contents || [];
 
@@ -263,7 +364,7 @@ export class YouTubeService {
         artist: song.artists?.[0]?.name || 'Unknown Artist',
         duration: song.duration?.seconds,
         durationFormatted: song.duration?.text,
-        thumbnailUrl: this.upscaleThumbnail(rawThumb),
+        thumbnailUrl: upscaleThumbnail(rawThumb),
         album: song.album?.name,
       });
     }

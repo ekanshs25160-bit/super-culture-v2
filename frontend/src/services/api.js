@@ -19,9 +19,11 @@ export const getGuestId = () => {
   return id;
 };
 
+export const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
 // Create dedicated axios instance with base URL /api
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${API_BASE}/api`,
   headers: {
     'Content-Type': 'application/json',
   },

@@ -4,6 +4,7 @@ import { Play, ArrowLeft, UserCheck, UserPlus, Disc3, ChevronLeft, ChevronRight 
 import { TrackRow, CoverImage, EmptyState, Skeleton } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
+import { API_BASE } from '../services/api';
 
 const PAGE_SIZE = 12;
 
@@ -38,10 +39,18 @@ export default function ArtistView() {
       setLoading(true);
       setPage(1);
       try {
-        const res = await fetch(`/api/music/artist/${encodeURIComponent(artistName)}`);
+        const res = await fetch(`${API_BASE}/api/music/artist/${encodeURIComponent(artistName)}`);
         if (!res.ok) throw new Error('Failed to load artist tracks');
         const json = await res.json();
-        const rawList = Array.isArray(json) ? json : json.results || json.tracks || [];
+        const rawList = Array.isArray(json.tracks)
+          ? json.tracks
+          : Array.isArray(json.data)
+          ? json.data
+          : Array.isArray(json.data?.tracks)
+          ? json.data.tracks
+          : Array.isArray(json)
+          ? json
+          : [];
 
         const normalized = rawList.map((t) => ({
           ...t,

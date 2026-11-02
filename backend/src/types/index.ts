@@ -12,9 +12,11 @@ export interface TrackMeta {
   title: string;
   artist: string;
   cover?: string;
-  duration?: number;
-  durationFormatted?: string;
+  albumArt?: string;
+  thumbnail_url?: string;
   thumbnailUrl: string;
+  duration?: number | string;
+  durationFormatted?: string;
   album?: string;
   addedBy?: string;
   addedAt?: string;

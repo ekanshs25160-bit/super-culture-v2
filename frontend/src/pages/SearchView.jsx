@@ -5,6 +5,7 @@ import { AudioContext } from '../context/AudioContext';
 import { PageHeader, TrackRow, EmptyState, Skeleton } from '../components/shared';
 import ArtistCard from '../components/search/ArtistCard';
 import { TRENDING_TRACKS } from '../data/tracks';
+import { API_BASE } from '../services/api';
 
 const RECENT_KEY = 'super_culture_recent_searches';
 const DEFAULT_RECENTS = ['Frank Ocean', 'Burial', 'Fred again..', 'Aphex Twin', 'Synthwave'];
@@ -51,11 +52,26 @@ export default function SearchView() {
       setPage(1);
 
       try {
-        const res = await fetch(`/api/music/search?q=${encodeURIComponent(query)}&limit=40`);
+        const res = await fetch(`${API_BASE}/api/music/search?q=${encodeURIComponent(query)}&limit=40`);
         if (!res.ok) throw new Error('Search failed');
         const json = await res.json();
 
-        const rawTracks = Array.isArray(json) ? json : json.tracks || json.results || [];
+        const rawTracks = Array.isArray(json.tracks)
+          ? json.tracks
+          : Array.isArray(json.data)
+          ? json.data
+          : Array.isArray(json.data?.tracks)
+          ? json.data.tracks
+          : Array.isArray(json)
+          ? json
+          : [];
+
+        const rawArtists = Array.isArray(json.artists)
+          ? json.artists
+          : Array.isArray(json.data?.artists)
+          ? json.data.artists
+          : [];
+
         const normalizedTracks = rawTracks.map((t) => ({
           ...t,
           id: t.videoId || t.id,
@@ -67,8 +83,8 @@ export default function SearchView() {
           seconds: typeof t.duration === 'number' ? t.duration : 210,
         }));
 
-        const foundArtists = Array.isArray(json.artists) && json.artists.length > 0
-          ? json.artists
+        const foundArtists = rawArtists.length > 0
+          ? rawArtists
           : extractUniqueArtists(normalizedTracks);
 
         if (isMounted) {

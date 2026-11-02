@@ -18,7 +18,12 @@ export class MusicController {
       }
 
       const results = await ytService.search(q, limit);
-      res.json(results);
+      res.json({
+        status: 'success',
+        data: results.tracks,
+        tracks: results.tracks,
+        artists: results.artists,
+      });
     } catch (error: any) {
       console.error('[MusicController] Search error:', error);
       res.status(500).json({ error: 'Failed to search tracks', details: error.message });
@@ -38,7 +43,17 @@ export class MusicController {
       }
 
       const tracks = await getArtistDiscography(name);
-      res.json(tracks);
+      const artistInfo = {
+        name,
+        avatar: tracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+      };
+
+      res.json({
+        status: 'success',
+        data: tracks,
+        tracks,
+        artist: artistInfo,
+      });
     } catch (error: any) {
       console.error('[MusicController] getArtist error:', error);
       res.status(500).json({ error: 'Failed to fetch artist discography', details: error.message });
