@@ -1,0 +1,232 @@
+@import "tailwindcss";
+
+@theme {
+  --color-obsidian: #0B0B0C;
+  --color-ivory: #F4F4F2;
+  --color-muted: #8A8A8E;
+  --color-accent: #1ED760;
+  --color-accent-hover: #22e868;
+
+  --font-serif: "Playfair Display", "Instrument Serif", Georgia, serif;
+  --font-display: "Instrument Serif", "Playfair Display", serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --radius-card: 24px;
+}
+
+:root {
+  --bg-obsidian: #0B0B0C;
+  --card-bg: rgba(20, 20, 22, 0.72);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-border-hover: rgba(255, 255, 255, 0.16);
+  --text-primary: #F4F4F2;
+  --text-muted: #8A8A8E;
+  --accent-green: #1ED760;
+}
+
+* {
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  background-color: #070708;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+}
+
+/* Editorial Glass Card System */
+.sc-card {
+  background: rgba(20, 20, 22, 0.72);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.28s ease, box-shadow 0.28s ease;
+}
+
+.sc-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Highlight White Editorial Card ("Made for you") */
+.sc-card-white {
+  background: #F4F4F2;
+  color: #0B0B0C;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease;
+}
+
+.sc-card-white:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 28px 65px rgba(0, 0, 0, 0.8);
+}
+
+/* Dark OLED Glass Bar (Audio PlayerBar & Floating Bars) */
+.sc-oled-bar {
+  background: rgba(0, 0, 0, 0.94);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.98), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.28s ease, box-shadow 0.28s ease;
+}
+
+.sc-oled-bar:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 1), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+/* Dark OLED Recessed Track (For Seek & Volume Bars) */
+.sc-oled-track {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 1.5px 4px rgba(0, 0, 0, 0.98);
+}
+
+/* Dark OLED Frosted Pills */
+.sc-pill {
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 9999px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.sc-pill:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(0, 0, 0, 0.98);
+}
+
+/* Monospace System Meta Labels */
+.meta-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+/* Equalizer Animation */
+@keyframes eqBar1 {
+  0%, 100% { height: 4px; }
+  50% { height: 14px; }
+}
+@keyframes eqBar2 {
+  0%, 100% { height: 13px; }
+  35% { height: 4px; }
+  75% { height: 15px; }
+}
+@keyframes eqBar3 {
+  0%, 100% { height: 6px; }
+  45% { height: 15px; }
+  80% { height: 5px; }
+}
+@keyframes eqBar4 {
+  0%, 100% { height: 11px; }
+  25% { height: 4px; }
+  60% { height: 13px; }
+}
+
+.eq-bar-1 { animation: eqBar1 0.85s ease-in-out infinite; box-shadow: 0 0 8px rgba(30, 215, 96, 0.7); }
+.eq-bar-2 { animation: eqBar2 0.72s ease-in-out infinite; box-shadow: 0 0 8px rgba(30, 215, 96, 0.7); }
+.eq-bar-3 { animation: eqBar3 0.94s ease-in-out infinite; box-shadow: 0 0 8px rgba(30, 215, 96, 0.7); }
+.eq-bar-4 { animation: eqBar4 0.68s ease-in-out infinite; box-shadow: 0 0 8px rgba(30, 215, 96, 0.7); }
+
+.paused-eq .eq-bar-1,
+.paused-eq .eq-bar-2,
+.paused-eq .eq-bar-3,
+.paused-eq .eq-bar-4 {
+  animation-play-state: paused;
+  height: 4px !important;
+}
+
+/* Subtle Scrollbar Styling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Green Glow effects */
+.glow-green {
+  box-shadow: 0 0 20px rgba(30, 215, 96, 0.42);
+}
+.glow-green-sm {
+  box-shadow: 0 0 10px rgba(30, 215, 96, 0.55);
+}
+
+/* Hero Wordmark Typography matching Reference Image 1 */
+.super-wordmark-italic {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 0.82;
+}
+.super-wordmark-upright {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 0.82;
+}
+
+/* Architectural Background Grid Overlay (Reference Image 1) */
+.editorial-grid-line-v {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.085);
+  pointer-events: none;
+}
+.editorial-grid-line-h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.085);
+  pointer-events: none;
+}
+
+/* Film Grain Texture Overlay */
+.film-grain {
+  background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* Active Left Nav Pill Indicator */
+.nav-item-active {
+  background: rgba(255, 255, 255, 0.07);
+  color: #F4F4F2;
+  position: relative;
+}
+.nav-item-active::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3.5px;
+  height: 20px;
+  background: #1ED760;
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 12px #1ED760;
+}
+
