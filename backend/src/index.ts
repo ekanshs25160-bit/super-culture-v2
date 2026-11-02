@@ -11,10 +11,7 @@ const app = express();
 const server = http.createServer(app);
 
 // Global Middleware
-app.use(cors({
-  origin: env.corsOrigin,
-  credentials: true,
-}));
+app.use(cors({ origin: '*' })); // You can lock this down to your Vercel URL later
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
