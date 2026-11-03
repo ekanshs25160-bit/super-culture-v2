@@ -226,7 +226,10 @@ export const AudioProvider = ({ children }) => {
 
     if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
       try {
-        if (isPlaying) {
+        const actualState = playerRef.current.getPlayerState();
+        // If actually playing (1) or buffering (3), pause; if cued (5), paused (2), or unstarted (-1), play
+        const isActuallyPlaying = actualState === 1 || actualState === 3;
+        if (isActuallyPlaying) {
           playerRef.current.pauseVideo();
           setIsPlaying(false);
         } else {

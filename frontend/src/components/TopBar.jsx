@@ -110,14 +110,21 @@ export default function TopBar() {
   const currentMode = mode || privacyMode;
 
   return (
-    <header className="relative z-30 flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 pt-2 pb-2">
+    <header
+      style={{
+        paddingTop: 'max(0.5rem, env(safe-area-inset-top, 0px))',
+        paddingLeft: 'max(0.75rem, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(0.75rem, env(safe-area-inset-right, 0px))',
+      }}
+      className="relative z-30 flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 pb-2 shrink-0 select-none"
+    >
       {/* Left: Hamburger (Mobile) + Wordmark + Frosted Pill Search */}
       <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
         {/* Animated Hamburger-to-Cross Button (Mobile/Tablet only) */}
         <button
           onClick={toggleMobileMenu}
           aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-          className="lg:hidden w-9 h-9 sc-pill flex items-center justify-center text-[#F4F4F2] transition cursor-pointer shrink-0"
+          className="lg:hidden w-11 h-11 sc-pill flex items-center justify-center text-[#F4F4F2] transition cursor-pointer shrink-0"
         >
           <div className="relative w-4 h-3.5 flex flex-col justify-between">
             <span

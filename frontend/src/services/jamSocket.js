@@ -108,6 +108,9 @@ class JamSocketClient {
         this.connect(this.roomId, this.userId);
       }
     }, backoff);
+    if (this.reconnectTimer?.unref) {
+      this.reconnectTimer.unref();
+    }
   }
 
   startHeartbeat() {
@@ -122,6 +125,9 @@ class JamSocketClient {
         });
       }
     }, 15000);
+    if (this.heartbeatTimer?.unref) {
+      this.heartbeatTimer.unref();
+    }
   }
 
   stopHeartbeat() {

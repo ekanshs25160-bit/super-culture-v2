@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 let toastTimer = null;
+const ENGINE_STORAGE_KEY = 'super_culture_playback_engine';
 
 export const useUiStore = create((set) => ({
   toastMessage: null,
@@ -9,6 +10,21 @@ export const useUiStore = create((set) => ({
   isAiDjLive: false,
   addToPlaylistTrack: null,
   isMobileMenuOpen: false,
+
+  // Mobile / Background Engine Preferences: 'Auto' | 'Audio stream' | 'YouTube player'
+  playbackEngine: (typeof localStorage !== 'undefined' && localStorage.getItem(ENGINE_STORAGE_KEY)) || 'Auto',
+  temporaryEngineOverride: null,
+  isAutoplayBlocked: false,
+
+  setPlaybackEngine: (engine) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(ENGINE_STORAGE_KEY, engine);
+    }
+    set({ playbackEngine: engine, temporaryEngineOverride: null });
+  },
+
+  setTemporaryEngineOverride: (override) => set({ temporaryEngineOverride: override }),
+  setAutoplayBlocked: (blocked) => set({ isAutoplayBlocked: blocked }),
 
   showToast: (message, duration = 3000) => {
     if (toastTimer) clearTimeout(toastTimer);

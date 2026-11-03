@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.gitignore
+.env
+.env.*
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+*.log
+npm-debug.log*
+.DS_Store

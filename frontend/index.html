@@ -2,8 +2,22 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Super Culture — Desktop Music Streaming</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+    <title>Super Culture</title>
+
+    <!-- PWA & Mobile Web Meta Tags -->
+    <meta name="theme-color" content="#0B0B0C" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Super Culture" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Icons & Manifest -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
     <!-- Google Fonts: Playfair Display, Instrument Serif, Inter, JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -12,13 +26,9 @@
       href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,600&display=swap"
       rel="stylesheet"
     />
-
-    <!-- YouTube IFrame API Script Preload -->
-    <script src="https://www.youtube.com/iframe_api"></script>
   </head>
-  <body class="h-[100dvh] w-screen overflow-hidden bg-[#070708] text-[#F4F4F2] m-0 p-0">
+  <body class="h-[100dvh] w-screen overflow-hidden bg-[#070708] text-[#F4F4F2] m-0 p-0 antialiased overscroll-none select-none">
     <div id="root" class="h-full w-full overflow-hidden"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
-

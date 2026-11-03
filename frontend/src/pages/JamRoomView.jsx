@@ -4,6 +4,7 @@ import { Radio, Users, SkipForward, Plus, Disc } from 'lucide-react';
 import { PageHeader, TrackRow, EmptyState, CoverImage } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useJamStore } from '../store/useJamStore';
+import { jamSocket } from '../services/jamSocket';
 
 export default function JamRoomView() {
   const { roomId } = useParams();
@@ -11,6 +12,7 @@ export default function JamRoomView() {
   const { playTrack, currentTrack, isPlaying } = useAudio();
 
   const {
+    userId,
     currentRoom,
     socketConnected,
     joinRoom,
@@ -18,6 +20,8 @@ export default function JamRoomView() {
     addToQueue,
     broadcastVoteSkip,
   } = useJamStore();
+
+  const isHost = Boolean(currentRoom && userId && currentRoom.hostId === userId);
 
   const [newSongTitle, setNewSongTitle] = useState('');
   const [votes, setVotes] = useState(0);
@@ -27,6 +31,21 @@ export default function JamRoomView() {
       joinRoom(roomId);
     }
   }, [roomId, currentRoom, joinRoom]);
+
+  const handleEndJam = () => {
+    if (currentRoom) {
+      const rId = currentRoom.roomId || currentRoom.id;
+      jamSocket.send({
+        type: 'host_left',
+        roomId: rId,
+        hostId: userId,
+        userId,
+        payload: { roomId: rId, hostId: userId },
+      });
+    }
+    leaveRoom();
+    navigate('/');
+  };
 
   const handleLeave = () => {
     leaveRoom();
@@ -64,21 +83,35 @@ export default function JamRoomView() {
       {/* Standardized PageHeader */}
       <PageHeader
         title={roomName}
-        meta="LIVE JAM SESSION"
+        meta={isHost ? "HOSTING JAM SESSION" : "LIVE JAM SESSION"}
         backTo="/"
-        backLabel="Leave Jam"
-        onBack={handleLeave}
+        backLabel={isHost ? "End Jam" : "Leave Jam"}
+        onBack={isHost ? handleEndJam : handleLeave}
       >
-        <span
-          className={`sc-pill px-3 py-1 text-xs flex items-center gap-1.5 ${
-            socketConnected
-              ? 'text-[#1ED760] bg-[#1ED760]/10 border border-[#1ED760]/20'
-              : 'text-[#8A8A8E] bg-white/5 border border-white/10'
-          }`}
-        >
-          <span className={`w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-[#1ED760]' : 'bg-[#8A8A8E]'}`} />
-          <span>{socketConnected ? 'WEBSOCKET SYNCED (<15ms)' : 'RECONNECTING WS...'}</span>
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            id={isHost ? "end-jam-btn" : "leave-jam-btn"}
+            onClick={isHost ? handleEndJam : handleLeave}
+            className={`sc-pill px-3 py-1 text-xs font-semibold rounded-full cursor-pointer transition ${
+              isHost
+                ? 'text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
+                : 'text-[#F4F4F2] bg-white/10 hover:bg-white/20 border border-white/10'
+            }`}
+          >
+            {isHost ? 'End Jam' : 'Leave Jam'}
+          </button>
+
+          <span
+            className={`sc-pill px-3 py-1 text-xs flex items-center gap-1.5 ${
+              socketConnected
+                ? 'text-[#1ED760] bg-[#1ED760]/10 border border-[#1ED760]/20'
+                : 'text-[#8A8A8E] bg-white/5 border border-white/10'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-[#1ED760]' : 'bg-[#8A8A8E]'}`} />
+            <span>{socketConnected ? 'WEBSOCKET SYNCED (<15ms)' : 'RECONNECTING WS...'}</span>
+          </span>
+        </div>
       </PageHeader>
 
       {/* Hero Now Playing in Jam */}

@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS user_memories (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indices for rapid queries
+-- Primary Indices
 CREATE INDEX IF NOT EXISTS idx_liked_user ON liked_songs(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_user ON playlists(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_tracks ON playlist_tracks(playlist_id, position);
@@ -98,7 +98,28 @@ CREATE INDEX IF NOT EXISTS idx_jam_code ON jam_rooms(room_code);
 CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_id);
 `;
 
+/**
+ * Migration 002: Speed hardening indexes for user/guest id and video id lookups
+ */
+export const MIGRATION_INDEXES_SQL = `
+-- Video ID and User/Guest ID Indexing Migration
+CREATE INDEX IF NOT EXISTS idx_liked_video ON liked_songs(video_id);
+CREATE INDEX IF NOT EXISTS idx_liked_user_video ON liked_songs(user_id, video_id);
+CREATE INDEX IF NOT EXISTS idx_playlist_tracks_video ON playlist_tracks(video_id);
+CREATE INDEX IF NOT EXISTS idx_history_video ON play_history(video_id);
+CREATE INDEX IF NOT EXISTS idx_history_user_video ON play_history(user_id, video_id);
+CREATE INDEX IF NOT EXISTS idx_jam_host ON jam_rooms(host_id);
+CREATE INDEX IF NOT EXISTS idx_jam_active ON jam_rooms(is_private, state);
+CREATE INDEX IF NOT EXISTS idx_memories_user_category ON user_memories(user_id, category);
+`;
+
 export function initializeSchema(db: SqliteDatabase): void {
+  // Ensure WAL mode and synchronous = NORMAL
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA synchronous = NORMAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
+
   db.exec(SCHEMA_SQL);
-  console.log('[DB] SQLite schema tables and indices verified.');
+  db.exec(MIGRATION_INDEXES_SQL);
+  console.log('[DB] SQLite WAL mode and performance indexes verified.');
 }

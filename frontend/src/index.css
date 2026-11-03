@@ -38,8 +38,12 @@
 
 * {
   box-sizing: border-box;
-  user-select: none;
   -webkit-font-smoothing: antialiased;
+}
+
+button, input[type="range"], .sc-pill, .sc-oled-bar, .select-none, [role="button"], [role="slider"] {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 body, html {
@@ -51,6 +55,8 @@ body, html {
   overflow: hidden;
   height: 100%;
   width: 100%;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Editorial Solid Graphite Card System (No backdrop-filter) */

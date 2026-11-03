@@ -3,16 +3,48 @@ import { LRUCache } from 'lru-cache';
 import { TrackMeta, StreamEntry, ArtistMeta, SearchResultPayload } from '../types/index.js';
 
 let ytInstance: Innertube | null = null;
+let ytInitPromise: Promise<Innertube> | null = null;
 
-export const getYtClient = async (): Promise<Innertube> => {
-  if (!ytInstance) {
-    ytInstance = await Innertube.create({
-      cache: new UniversalCache(false),
-      generate_session_locally: true,
-    });
-    console.log('[ytService] Innertube client initialized.');
-  }
-  return ytInstance;
+/**
+ * Lazy singleton Innertube client with retry-on-failure refresh.
+ * Guarantees a single instance is shared across all concurrent requests.
+ */
+export const getYtClient = async (retries = 3): Promise<Innertube> => {
+  if (ytInstance) return ytInstance;
+  if (ytInitPromise) return ytInitPromise;
+
+  ytInitPromise = (async () => {
+    let attempt = 0;
+    while (attempt < retries) {
+      try {
+        attempt++;
+        const client = await Innertube.create({
+          cache: new UniversalCache(false),
+          generate_session_locally: true,
+        });
+        ytInstance = client;
+        console.log('[ytService] Innertube client initialized.');
+        return client;
+      } catch (err: any) {
+        console.warn(`[ytService] Innertube initialization attempt ${attempt}/${retries} failed:`, err.message || err);
+        if (attempt >= retries) {
+          ytInitPromise = null; // Reset promise so subsequent requests can retry
+          throw err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+    ytInitPromise = null;
+    throw new Error('Innertube failed to initialize after retries');
+  })();
+
+  return ytInitPromise;
+};
+
+export const refreshYtClient = async (): Promise<Innertube> => {
+  ytInstance = null;
+  ytInitPromise = null;
+  return getYtClient();
 };
 
 // Helper to recursively extract MusicResponsiveListItem / Video / MusicShelf nodes from any youtubei.js response
@@ -102,12 +134,17 @@ export const searchMusicCatalog = async (query: string, limit = 40): Promise<Sea
   const artists: ArtistMeta[] = [];
   const seenIds = new Set<string>();
 
-  // 1. Try YouTube Music Song Search first
-  try {
-    const songSearch: any = await yt.music.search(query, { type: 'song' });
+  // Run song search and artist search in parallel using Promise.allSettled
+  const [songResult, artistResult] = await Promise.allSettled([
+    yt.music.search(query, { type: 'song' }),
+    yt.music.search(query, { type: 'artist' }),
+  ]);
+
+  // 1. Process Song Results
+  if (songResult.status === 'fulfilled' && songResult.value) {
     const rawSongs = [
-      ...extractItemsFromShelves(songSearch?.songs),
-      ...extractItemsFromShelves(songSearch?.contents),
+      ...extractItemsFromShelves((songResult.value as any)?.songs),
+      ...extractItemsFromShelves((songResult.value as any)?.contents),
     ];
 
     for (const item of rawSongs) {
@@ -117,11 +154,9 @@ export const searchMusicCatalog = async (query: string, limit = 40): Promise<Sea
         tracks.push(normalized);
       }
     }
-  } catch (err) {
-    console.warn('[ytService] yt.music song search failed, falling back to yt.search:', err);
   }
 
-  // 2. Fallback to standard YouTube search if YT Music returned 0 tracks (common on Render IPs)
+  // Fallback to standard YouTube search if YT Music returned 0 tracks
   if (tracks.length === 0) {
     try {
       const stdSearch: any = await yt.search(query, { type: 'video' });
@@ -134,8 +169,8 @@ export const searchMusicCatalog = async (query: string, limit = 40): Promise<Sea
           tracks.push(normalized);
         }
       }
-    } catch (fallbackErr) {
-      console.warn('[ytService] Standard YouTube search fallback failed, trying general music search:', fallbackErr);
+    } catch (fallbackErr: any) {
+      console.warn('[ytService] Standard YouTube search fallback failed, trying general music search:', fallbackErr.message);
       try {
         const generalMusic: any = await yt.music.search(query);
         const rawGeneral = extractItemsFromShelves(generalMusic);
@@ -146,18 +181,17 @@ export const searchMusicCatalog = async (query: string, limit = 40): Promise<Sea
             tracks.push(normalized);
           }
         }
-      } catch (genErr) {
-        console.error('[ytService] All search attempts failed:', genErr);
+      } catch (genErr: any) {
+        console.error('[ytService] All search attempts failed:', genErr.message);
       }
     }
   }
 
-  // 3. Extract matching Artists
-  try {
-    const artistSearch: any = await yt.music.search(query, { type: 'artist' });
+  // 2. Process Artist Results
+  if (artistResult.status === 'fulfilled' && artistResult.value) {
     const rawArtists = [
-      ...extractItemsFromShelves(artistSearch?.artists),
-      ...extractItemsFromShelves(artistSearch?.contents),
+      ...extractItemsFromShelves((artistResult.value as any)?.artists),
+      ...extractItemsFromShelves((artistResult.value as any)?.contents),
     ];
 
     const seenArtists = new Set<string>();
@@ -181,8 +215,6 @@ export const searchMusicCatalog = async (query: string, limit = 40): Promise<Sea
       });
       if (artists.length >= 8) break;
     }
-  } catch (artistErr) {
-    console.warn('[ytService] Artist search failed:', artistErr);
   }
 
   // Derive unique artists from tracks if artist search returns empty
@@ -244,38 +276,58 @@ export class YouTubeService {
     const seenIds = new Set<string>();
 
     try {
-      const searchResults: any = await yt.music.search(artistName, { type: 'artist' });
-      const rawArtists = [
-        ...extractItemsFromShelves(searchResults?.artists),
-        ...extractItemsFromShelves(searchResults?.contents),
-      ];
-      const artistId = rawArtists[0]?.id || rawArtists[0]?.endpoint?.payload?.browseId;
+      // Parallelize artist lookup and fallback song search
+      const [artistSearchResult, directSongsResult] = await Promise.allSettled([
+        yt.music.search(artistName, { type: 'artist' }),
+        yt.music.search(`${artistName} official audio`, { type: 'song' }),
+      ]);
 
-      if (artistId) {
-        const artistProfile: any = await yt.music.getArtist(artistId);
-        const songsShelf =
-          artistProfile.sections?.find((s: any) => s.type === 'MusicShelf') ||
-          artistProfile.top_songs ||
-          artistProfile.songs;
+      if (artistSearchResult.status === 'fulfilled' && artistSearchResult.value) {
+        const rawArtists = [
+          ...extractItemsFromShelves((artistSearchResult.value as any)?.artists),
+          ...extractItemsFromShelves((artistSearchResult.value as any)?.contents),
+        ];
+        const artistId = rawArtists[0]?.id || rawArtists[0]?.endpoint?.payload?.browseId;
 
-        let rawSongs: any[] = [];
-        const browseId = songsShelf?.endpoint?.payload?.browseId;
-        if (browseId) {
-          try {
-            const playlist: any = await yt.music.getPlaylist(browseId);
-            if (Array.isArray(playlist?.items) && playlist.items.length > 0) {
-              rawSongs = playlist.items;
+        if (artistId) {
+          const artistProfile: any = await yt.music.getArtist(artistId);
+          const songsShelf =
+            artistProfile.sections?.find((s: any) => s.type === 'MusicShelf') ||
+            artistProfile.top_songs ||
+            artistProfile.songs;
+
+          let rawSongs: any[] = [];
+          const browseId = songsShelf?.endpoint?.payload?.browseId;
+          if (browseId) {
+            try {
+              const playlist: any = await yt.music.getPlaylist(browseId);
+              if (Array.isArray(playlist?.items) && playlist.items.length > 0) {
+                rawSongs = playlist.items;
+              }
+            } catch {
+              // Fallback to shelf contents
             }
-          } catch {
-            // Use shelf contents if playlist expansion fails
+          }
+
+          if (rawSongs.length === 0) {
+            rawSongs = extractItemsFromShelves(songsShelf || artistProfile);
+          }
+
+          for (const item of rawSongs) {
+            const normalized = normalizeTrackItem(item);
+            if (normalized && !seenIds.has(normalized.videoId)) {
+              seenIds.add(normalized.videoId);
+              tracks.push(normalized);
+            }
+            if (tracks.length >= limit) break;
           }
         }
+      }
 
-        if (rawSongs.length === 0) {
-          rawSongs = extractItemsFromShelves(songsShelf || artistProfile);
-        }
-
-        for (const item of rawSongs) {
+      // Merge direct song search if tracks is still low
+      if (tracks.length < 5 && directSongsResult.status === 'fulfilled' && directSongsResult.value) {
+        const rawDirect = extractItemsFromShelves(directSongsResult.value);
+        for (const item of rawDirect) {
           const normalized = normalizeTrackItem(item);
           if (normalized && !seenIds.has(normalized.videoId)) {
             seenIds.add(normalized.videoId);
@@ -284,11 +336,11 @@ export class YouTubeService {
           if (tracks.length >= limit) break;
         }
       }
-    } catch (profileErr) {
-      console.warn('[ytService] getArtist profile lookup failed:', profileErr);
+    } catch (profileErr: any) {
+      console.warn('[ytService] getArtist profile lookup failed:', profileErr.message || profileErr);
     }
 
-    // Fallback if yt.music.getArtist() fails or returns fewer than 5 tracks
+    // Fallback if yt.music.getArtist() returned fewer than 5 tracks
     if (tracks.length < 5) {
       try {
         const fallbackRes = await searchMusicCatalog(`${artistName} official audio`, limit);
@@ -296,23 +348,23 @@ export class YouTubeService {
         for (const t of fallbackRes.tracks) {
           if (!seenIds.has(t.videoId)) {
             seenIds.add(t.videoId);
-            // Prioritize tracks matching artist name, or append
             if (t.artist.toLowerCase().includes(nameLower) || tracks.length < 5) {
               tracks.push(t);
             }
           }
           if (tracks.length >= limit) break;
         }
-      } catch (fallbackErr) {
-        console.error('[ytService] Artist discography fallback search failed:', fallbackErr);
+      } catch (fallbackErr: any) {
+        console.error('[ytService] Artist discography fallback search failed:', fallbackErr.message);
       }
     }
 
     return tracks;
   }
 
-  public async resolveAudioStream(videoId: string): Promise<StreamEntry> {
-    const cached = this.streamCache.get(videoId);
+  public async resolveAudioStream(videoId: string, prefer?: 'aac' | 'best'): Promise<StreamEntry> {
+    const cacheKey = `${videoId}:${prefer || 'best'}`;
+    const cached = this.streamCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached;
     }
@@ -325,10 +377,37 @@ export class YouTubeService {
       info = await client.getInfo(videoId);
     }
 
-    const format = info.chooseFormat({
-      type: 'audio',
-      quality: 'best',
-    });
+    let format: any;
+    if (prefer === 'aac') {
+      try {
+        format = info.chooseFormat({
+          type: 'audio',
+          quality: 'best',
+          format: 'mp4',
+        });
+      } catch {
+        // Fallback to searching adaptive formats
+      }
+
+      if (!format || !(format.mime_type?.includes('mp4a') || format.mime_type?.includes('audio/mp4'))) {
+        const audioFormats = (info.streaming_data?.adaptive_formats || []).filter(
+          (f: any) =>
+            f.has_audio &&
+            (f.mime_type?.includes('audio/mp4') || f.mime_type?.includes('mp4a'))
+        );
+        if (audioFormats.length > 0) {
+          audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+          format = audioFormats[0];
+        }
+      }
+    }
+
+    if (!format) {
+      format = info.chooseFormat({
+        type: 'audio',
+        quality: 'best',
+      });
+    }
 
     if (!format || !format.decipher(client.session.player)) {
       throw new Error(`Unable to decipher audio format for video ${videoId}`);
@@ -343,7 +422,7 @@ export class YouTubeService {
       expiresAt: Date.now() + 1000 * 60 * 60 * 3.5,
     };
 
-    this.streamCache.set(videoId, entry);
+    this.streamCache.set(cacheKey, entry);
     return entry;
   }
 

@@ -1,11 +1,13 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
 import { ytService, getArtistDiscography } from '../services/ytService.js';
+import { cacheService, CacheService } from '../services/cacheService.js';
+import { createStreamToken, verifyStreamToken } from '../services/tokenService.js';
 import { TrackMeta } from '../types/index.js';
 
 export class MusicController {
   /**
-   * Search songs and music tracks
+   * Search songs and music tracks (Cached 5 min, SWR)
    * GET /api/music/search?q={query}
    */
   public async search(req: Request, res: Response): Promise<void> {
@@ -17,73 +19,142 @@ export class MusicController {
         return;
       }
 
-      const results = await ytService.search(q, limit);
+      const normalizedQ = cacheService.normalizeQuery(q);
+      const cacheKey = `search:${normalizedQ}:${limit}`;
+
+      const { data, cached, stale } = await cacheService.getOrFetch(
+        cacheKey,
+        CacheService.TTL.SEARCH,
+        () => ytService.search(q, limit)
+      );
+
+      res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+      res.setHeader('X-Cache', cached ? (stale ? 'STALE' : 'HIT') : 'MISS');
+
       res.json({
         status: 'success',
-        data: results.tracks,
-        tracks: results.tracks,
-        artists: results.artists,
+        data: data.tracks,
+        tracks: data.tracks,
+        artists: data.artists,
       });
     } catch (error: any) {
-      console.error('[MusicController] Search error:', error);
+      console.error('[MusicController] Search error:', error.message || error);
       res.status(500).json({ error: 'Failed to search tracks', details: error.message });
     }
   }
 
   /**
-   * Fetch artist official discography
+   * Fetch artist official discography (Cached 30 min, SWR)
    * GET /api/music/artist/:name
    */
   public async getArtist(req: Request, res: Response): Promise<void> {
     try {
-      const name = decodeURIComponent(req.params.name || '').trim();
-      if (!name) {
+      const rawName = decodeURIComponent(req.params.name || '').trim();
+      if (!rawName) {
         res.status(400).json({ error: 'Artist name parameter is required' });
         return;
       }
 
-      const tracks = await getArtistDiscography(name);
-      const artistInfo = {
-        name,
-        avatar: tracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-      };
+      const normalizedName = cacheService.normalizeQuery(rawName);
+      const cacheKey = `artist:${normalizedName}:60`;
+
+      const { data, cached, stale } = await cacheService.getOrFetch(
+        cacheKey,
+        CacheService.TTL.ARTIST,
+        async () => {
+          const tracks = await getArtistDiscography(rawName);
+          const artistInfo = {
+            name: rawName,
+            avatar: tracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+          };
+          return { tracks, artist: artistInfo };
+        }
+      );
+
+      res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=3600');
+      res.setHeader('X-Cache', cached ? (stale ? 'STALE' : 'HIT') : 'MISS');
 
       res.json({
         status: 'success',
-        data: tracks,
-        tracks,
-        artist: artistInfo,
+        data: data.tracks,
+        tracks: data.tracks,
+        artist: data.artist,
       });
     } catch (error: any) {
-      console.error('[MusicController] getArtist error:', error);
+      console.error('[MusicController] getArtist error:', error.message || error);
       res.status(500).json({ error: 'Failed to fetch artist discography', details: error.message });
     }
   }
 
   /**
-   * Stream audio proxy supporting byte-range headers (206 Partial Content)
-   * GET /api/yt/stream/:videoId
+   * Issue signed stream URL with 5-minute HMAC token
+   * POST /api/music/stream-url
    */
-  public async stream(req: Request, res: Response): Promise<void> {
-    const { videoId } = req.params;
+  public async getStreamUrl(req: Request, res: Response): Promise<void> {
     try {
-      if (!videoId) {
-        res.status(400).json({ error: 'videoId parameter is required' });
+      const { videoId, prefer } = req.body || {};
+      if (!videoId || typeof videoId !== 'string') {
+        res.status(400).json({ error: 'videoId string is required' });
         return;
       }
 
-      const streamInfo = await ytService.resolveAudioStream(videoId);
+      const token = createStreamToken(videoId);
+      const preferParam = prefer === 'aac' ? '&prefer=aac' : '';
+      const url = `/api/yt/stream/${videoId}?t=${encodeURIComponent(token)}${preferParam}`;
+
+      res.json({ url });
+    } catch (err: any) {
+      console.error('[MusicController] stream-url generation error:', err.message);
+      res.status(500).json({ error: 'Failed to generate signed stream URL', details: err.message });
+    }
+  }
+
+  /**
+   * Stream audio proxy supporting byte-range headers (206 Partial Content), HEAD, and HMAC token validation
+   * GET /api/yt/stream/:videoId
+   * HEAD /api/yt/stream/:videoId
+   */
+  public async stream(req: Request, res: Response): Promise<void> {
+    const { videoId } = req.params;
+    const token = req.query.t as string | undefined;
+    const prefer = req.query.prefer === 'aac' ? 'aac' : 'best';
+
+    if (!videoId) {
+      res.status(400).json({ error: 'videoId parameter is required' });
+      return;
+    }
+
+    // Verify HMAC token
+    const tokenStatus = verifyStreamToken(videoId, token);
+    if (!tokenStatus.valid) {
+      res.status(403).json({ error: 'Invalid or missing stream token' });
+      return;
+    }
+    if (tokenStatus.expired) {
+      res.status(410).json({ error: 'Stream token expired' });
+      return;
+    }
+
+    const abortController = new AbortController();
+    req.on('close', () => {
+      abortController.abort();
+    });
+
+    try {
+      const streamInfo = await ytService.resolveAudioStream(videoId, prefer);
       const range = req.headers.range;
 
       const response = await axios.get(streamInfo.url, {
         headers: range ? { Range: range } : undefined,
-        responseType: 'stream',
+        responseType: req.method === 'HEAD' ? undefined : 'stream',
+        signal: abortController.signal,
         validateStatus: (status) => status >= 200 && status < 400,
       });
 
       res.status(response.status);
       res.setHeader('Content-Type', streamInfo.mimeType || 'audio/mp4');
       res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'private, no-store');
 
       if (response.headers['content-range']) {
         res.setHeader('Content-Range', String(response.headers['content-range']));
@@ -92,195 +163,247 @@ export class MusicController {
         res.setHeader('Content-Length', String(response.headers['content-length']));
       }
 
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+
       response.data.pipe(res);
     } catch (error: any) {
+      if (axios.isCancel(error) || abortController.signal.aborted) {
+        return;
+      }
       console.error(`[MusicController] Stream error for ${videoId}:`, error.message);
       res.status(500).json({ error: 'Failed to stream audio', details: error.message });
     }
   }
 
   /**
-   * Up next / Watch playlist recommendations for "PLAYING NEXT" pill
+   * Up next / Watch playlist recommendations (Cached 30 min, SWR)
    * GET /api/yt/up-next/:videoId
    */
   public async getUpNext(req: Request, res: Response): Promise<void> {
     try {
       const { videoId } = req.params;
-      const tracks = await ytService.getUpNext(videoId);
-      res.json({ tracks });
+      if (!videoId) {
+        res.status(400).json({ error: 'videoId parameter is required' });
+        return;
+      }
+
+      const cacheKey = `up-next:${videoId}`;
+      const { data, cached, stale } = await cacheService.getOrFetch(
+        cacheKey,
+        CacheService.TTL.UP_NEXT,
+        () => ytService.getUpNext(videoId)
+      );
+
+      res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=3600');
+      res.setHeader('X-Cache', cached ? (stale ? 'STALE' : 'HIT') : 'MISS');
+
+      res.json({ tracks: data });
     } catch (error: any) {
-      console.error('[MusicController] UpNext error:', error);
+      console.error('[MusicController] UpNext error:', error.message || error);
       res.status(500).json({ error: 'Failed to load up-next playlist', details: error.message });
     }
   }
 
   /**
-   * Pre-warmed home shelves (Trending Worldwide, Curated stacks)
-   * GET /api/yt/home-shelves
+   * Generates the home shelves payload (Curated stacks & trending highlights)
+   */
+  public async generateHomeShelves(): Promise<{ shelves: any[] }> {
+    const trending: TrackMeta[] = [
+      {
+        videoId: 'IlEkvbRmfrA',
+        title: 'Archangel',
+        artist: 'Burial',
+        duration: 238,
+        durationFormatted: '3:58',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'r4l9bFqgMaQ',
+        title: 'Nights',
+        artist: 'Frank Ocean',
+        duration: 307,
+        durationFormatted: '5:07',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'UBS4Gi1y_nc',
+        title: 'Windowlicker',
+        artist: 'Aphex Twin',
+        duration: 367,
+        durationFormatted: '6:07',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'JQpKtnLUduE',
+        title: 'Cherry-coloured',
+        artist: 'Cocteau Twins',
+        duration: 192,
+        durationFormatted: '3:12',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+      },
+    ];
+
+    const chillVibes: TrackMeta[] = [
+      {
+        videoId: 'TCd6PfxOy0Y',
+        title: 'Chill Vibes Mix • Track 01',
+        artist: 'Brian Eno, Floating Points',
+        duration: 280,
+        durationFormatted: '4:40',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'FvOpPeKSf_4',
+        title: 'Glimpse of Us',
+        artist: 'Joji',
+        duration: 233,
+        durationFormatted: '3:53',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'MV_3Dpw-BRY',
+        title: 'Nightcall (Ambient Mix)',
+        artist: 'Kavinsky',
+        duration: 252,
+        durationFormatted: '4:12',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=544&h=544&fit=crop',
+      },
+    ];
+
+    const hipHop: TrackMeta[] = [
+      {
+        videoId: 'hI8A14Qcv68',
+        title: 'N.Y. State of Mind',
+        artist: 'Nas, DJ Premier',
+        duration: 294,
+        durationFormatted: '4:54',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'sw4c17Z4N4I',
+        title: 'N95',
+        artist: 'Kendrick Lamar',
+        duration: 215,
+        durationFormatted: '3:35',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'r4l9bFqgMaQ',
+        title: 'First Person Shooter',
+        artist: 'Drake ft. J. Cole',
+        duration: 247,
+        durationFormatted: '4:07',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=544&h=544&fit=crop',
+      },
+    ];
+
+    const lateNight: TrackMeta[] = [
+      {
+        videoId: 'MV_3Dpw-BRY',
+        title: 'Nightcall (Runway Edit)',
+        artist: 'Kavinsky, Lovefoxxx',
+        duration: 252,
+        durationFormatted: '4:12',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'O1OTWCd40bc',
+        title: 'Wicked Games',
+        artist: 'The Weeknd',
+        duration: 325,
+        durationFormatted: '5:25',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=544&h=544&fit=crop',
+      },
+      {
+        videoId: 'TCd6PfxOy0Y',
+        title: 'Veridis Quo',
+        artist: 'Daft Punk',
+        duration: 345,
+        durationFormatted: '5:45',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=544&h=544&fit=crop',
+      },
+    ];
+
+    const madeForYou: TrackMeta = {
+      videoId: '2tOutF8B3f8',
+      title: 'Daily Mix 01 • Xtal',
+      artist: 'Aphex Twin, Blood Orange, Tirzah',
+      duration: 291,
+      durationFormatted: '4:51',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=544&h=544&fit=crop',
+    };
+
+    return {
+      shelves: [
+        {
+          id: 'trending_worldwide',
+          title: 'Trending Worldwide',
+          type: 'trending',
+          items: trending,
+        },
+        {
+          id: 'chill_vibes',
+          title: 'Chill Vibes',
+          type: 'curated_stack',
+          items: chillVibes,
+        },
+        {
+          id: 'hip_hop_essentials',
+          title: 'Hip Hop Essentials',
+          type: 'curated_stack',
+          items: hipHop,
+        },
+        {
+          id: 'late_night_drive',
+          title: 'Late Night Drive',
+          type: 'curated_stack',
+          items: lateNight,
+        },
+        {
+          id: 'made_for_you',
+          title: 'Made for you',
+          type: 'highlight',
+          items: [madeForYou],
+        },
+      ],
+    };
+  }
+
+  /**
+   * Warm home shelves cache and schedule periodic 15-minute background refresh
+   */
+  public async warmHomeShelvesCache(): Promise<void> {
+    try {
+      const data = await this.generateHomeShelves();
+      cacheService.set('home-shelves', data, CacheService.TTL.HOME_SHELVES);
+      console.log('[MusicController] Home shelves cache pre-warmed.');
+    } catch (err: any) {
+      console.warn('[MusicController] Failed to pre-warm home shelves cache:', err.message);
+    }
+  }
+
+  /**
+   * Home shelves endpoint (Cached 15 min, SWR)
+   * GET /api/music/home-shelves or /api/yt/home-shelves
    */
   public async getHomeShelves(req: Request, res: Response): Promise<void> {
     try {
-      const trending: TrackMeta[] = [
-        {
-          videoId: 'IlEkvbRmfrA',
-          title: 'Archangel',
-          artist: 'Burial',
-          duration: 238,
-          durationFormatted: '3:58',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'r4l9bFqgMaQ',
-          title: 'Nights',
-          artist: 'Frank Ocean',
-          duration: 307,
-          durationFormatted: '5:07',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'UBS4Gi1y_nc',
-          title: 'Windowlicker',
-          artist: 'Aphex Twin',
-          duration: 367,
-          durationFormatted: '6:07',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'JQpKtnLUduE',
-          title: 'Cherry-coloured',
-          artist: 'Cocteau Twins',
-          duration: 192,
-          durationFormatted: '3:12',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-        },
-      ];
+      const cacheKey = 'home-shelves';
+      const { data, cached, stale } = await cacheService.getOrFetch(
+        cacheKey,
+        CacheService.TTL.HOME_SHELVES,
+        () => this.generateHomeShelves()
+      );
 
-      const chillVibes: TrackMeta[] = [
-        {
-          videoId: 'TCd6PfxOy0Y',
-          title: 'Chill Vibes Mix • Track 01',
-          artist: 'Brian Eno, Floating Points',
-          duration: 280,
-          durationFormatted: '4:40',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'FvOpPeKSf_4',
-          title: 'Glimpse of Us',
-          artist: 'Joji',
-          duration: 233,
-          durationFormatted: '3:53',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'MV_3Dpw-BRY',
-          title: 'Nightcall (Ambient Mix)',
-          artist: 'Kavinsky',
-          duration: 252,
-          durationFormatted: '4:12',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=544&h=544&fit=crop',
-        },
-      ];
+      res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=1800');
+      res.setHeader('X-Cache', cached ? (stale ? 'STALE' : 'HIT') : 'MISS');
 
-      const hipHop: TrackMeta[] = [
-        {
-          videoId: 'hI8A14Qcv68',
-          title: 'N.Y. State of Mind',
-          artist: 'Nas, DJ Premier',
-          duration: 294,
-          durationFormatted: '4:54',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'sw4c17Z4N4I',
-          title: 'N95',
-          artist: 'Kendrick Lamar',
-          duration: 215,
-          durationFormatted: '3:35',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'r4l9bFqgMaQ',
-          title: 'First Person Shooter',
-          artist: 'Drake ft. J. Cole',
-          duration: 247,
-          durationFormatted: '4:07',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=544&h=544&fit=crop',
-        },
-      ];
-
-      const lateNight: TrackMeta[] = [
-        {
-          videoId: 'MV_3Dpw-BRY',
-          title: 'Nightcall (Runway Edit)',
-          artist: 'Kavinsky, Lovefoxxx',
-          duration: 252,
-          durationFormatted: '4:12',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'O1OTWCd40bc',
-          title: 'Wicked Games',
-          artist: 'The Weeknd',
-          duration: 325,
-          durationFormatted: '5:25',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=544&h=544&fit=crop',
-        },
-        {
-          videoId: 'TCd6PfxOy0Y',
-          title: 'Veridis Quo',
-          artist: 'Daft Punk',
-          duration: 345,
-          durationFormatted: '5:45',
-          thumbnailUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=544&h=544&fit=crop',
-        },
-      ];
-
-      const madeForYou: TrackMeta = {
-        videoId: '2tOutF8B3f8',
-        title: 'Daily Mix 01 • Xtal',
-        artist: 'Aphex Twin, Blood Orange, Tirzah',
-        duration: 291,
-        durationFormatted: '4:51',
-        thumbnailUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=544&h=544&fit=crop',
-      };
-
-      res.json({
-        shelves: [
-          {
-            id: 'trending_worldwide',
-            title: 'Trending Worldwide',
-            type: 'trending',
-            items: trending,
-          },
-          {
-            id: 'chill_vibes',
-            title: 'Chill Vibes',
-            type: 'curated_stack',
-            items: chillVibes,
-          },
-          {
-            id: 'hip_hop_essentials',
-            title: 'Hip Hop Essentials',
-            type: 'curated_stack',
-            items: hipHop,
-          },
-          {
-            id: 'late_night_drive',
-            title: 'Late Night Drive',
-            type: 'curated_stack',
-            items: lateNight,
-          },
-          {
-            id: 'made_for_you',
-            title: 'Made for you',
-            type: 'highlight',
-            items: [madeForYou],
-          },
-        ],
-      });
+      res.json(data);
     } catch (error: any) {
-      console.error('[MusicController] Home shelves error:', error);
+      console.error('[MusicController] Home shelves error:', error.message || error);
       res.status(500).json({ error: 'Failed to load home shelves' });
     }
   }

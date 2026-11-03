@@ -1,8 +1,29 @@
 import { create } from 'zustand';
-import { apiClient, getGuestId } from '../services/api';
-import { jamSocket } from '../services/jamSocket';
+import { apiClient } from '../services/api.js';
+import { jamSocket } from '../services/jamSocket.js';
+import { useUiStore } from './useUiStore.js';
+
+const USER_ID_KEY = 'sc_user_id';
+
+/**
+ * Retrieves the persistent Jam user ID from localStorage or creates a random UUID.
+ */
+export const getStoredUserId = () => {
+  if (typeof window === 'undefined') return 'sc-server-user';
+  let uid = localStorage.getItem(USER_ID_KEY);
+  if (!uid) {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      uid = crypto.randomUUID();
+    } else {
+      uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+    localStorage.setItem(USER_ID_KEY, uid);
+  }
+  return uid;
+};
 
 export const useJamStore = create((set, get) => ({
+  userId: getStoredUserId(),
   activeRooms: [],
   currentRoom: null,
   socketConnected: false,
@@ -35,7 +56,7 @@ export const useJamStore = create((set, get) => ({
    * Join a room via REST + WebSocket
    */
   joinRoom: async (roomId, guestName = 'Super Culture Member') => {
-    const guestId = getGuestId();
+    const userId = get().userId || getStoredUserId();
     set({ loading: true });
 
     try {
@@ -48,19 +69,32 @@ export const useJamStore = create((set, get) => ({
       });
 
       // Connect socket & register message listeners
-      get().connectSocket(roomId, guestId);
+      get().connectSocket(roomId, userId);
+      jamSocket.send({
+        type: 'join_room',
+        roomId,
+        userId,
+        payload: { roomId, userId },
+      });
       return roomData;
     } catch (err) {
       console.warn('[JamStore] REST Join room failed, using local room state:', err);
       const fallback = {
         id: roomId,
+        roomId,
         name: 'Live Jam',
         hostId: 'host-user',
-        participants: [{ uid: guestId, name: guestName, joinedAt: new Date().toISOString() }],
+        participants: [{ uid: userId, name: guestName, joinedAt: new Date().toISOString() }],
         queue: [],
       };
       set({ currentRoom: fallback, loading: false });
-      get().connectSocket(roomId, guestId);
+      get().connectSocket(roomId, userId);
+      jamSocket.send({
+        type: 'join_room',
+        roomId,
+        userId,
+        payload: { roomId, userId },
+      });
       return fallback;
     }
   },
@@ -74,29 +108,67 @@ export const useJamStore = create((set, get) => ({
   },
 
   /**
-   * Create a new room
+   * Create a new room with persistent userId as hostId
    */
-  createRoom: async (name, isPrivate = false) => {
-    const guestId = getGuestId();
+  createRoom: async (name = 'Live Jam', isPrivate = false) => {
+    const userId = get().userId || getStoredUserId();
     try {
       const res = await apiClient.jam.createRoom(name, isPrivate);
       const room = res.room || res;
+      if (room) {
+        room.hostId = userId;
+      }
       set((state) => ({
         activeRooms: [room, ...state.activeRooms],
         currentRoom: room,
       }));
-      get().connectSocket(room.roomId || room.id, guestId);
+      const roomId = room.roomId || room.id;
+      get().connectSocket(roomId, userId);
+      jamSocket.send({
+        type: 'create_room',
+        roomId,
+        hostId: userId,
+        payload: { roomId, hostId: userId },
+      });
       return room;
     } catch (err) {
       console.error('[JamStore] Failed to create room:', err);
-      return null;
+      const roomId = `room-${Date.now()}`;
+      const fallback = {
+        id: roomId,
+        roomId,
+        name: name || 'Live Jam',
+        hostId: userId,
+        participants: [{ uid: userId, name: name || 'Host', joinedAt: new Date().toISOString() }],
+        queue: [],
+      };
+      set((state) => ({
+        activeRooms: [fallback, ...state.activeRooms],
+        currentRoom: fallback,
+      }));
+      get().connectSocket(roomId, userId);
+      jamSocket.send({
+        type: 'create_room',
+        roomId,
+        hostId: userId,
+        payload: { roomId, hostId: userId },
+      });
+      return fallback;
     }
+  },
+
+  /**
+   * Alias for createRoom to satisfy createJamRoom naming convention
+   */
+  createJamRoom: async (name = 'Live Jam', isPrivate = false) => {
+    return get().createRoom(name, isPrivate);
   },
 
   /**
    * Connect WebSocket and bind room synchronization events
    */
-  connectSocket: (roomId, userId) => {
+  connectSocket: (roomId, userIdParam) => {
+    const userId = userIdParam || get().userId || getStoredUserId();
     jamSocket.connect(roomId, userId);
 
     // Connection status listener
@@ -104,7 +176,101 @@ export const useJamStore = create((set, get) => ({
       set({ socketConnected: connected });
     });
 
-    // Remote playback synchronization listeners (Host -> Guests)
+    // Handle initial room snapshot on late join
+    jamSocket.on('room_snapshot', (msg) => {
+      const payload = msg.payload || msg;
+      const currentTrack = payload.currentTrack;
+      const currentTime = payload.currentTime;
+      const isPlaying = Boolean(payload.isPlaying);
+      const queue = payload.queue;
+
+      const room = get().currentRoom;
+      if (room) {
+        set({
+          currentRoom: {
+            ...room,
+            currentTrack: currentTrack !== undefined ? currentTrack : room.currentTrack,
+            queue: Array.isArray(queue) ? queue : room.queue,
+            state: isPlaying ? 'playing' : 'paused',
+          },
+        });
+      }
+
+      const handlers = get().externalAudioSyncHandlers;
+      if (handlers) {
+        if (handlers.onRoomSnapshot) {
+          handlers.onRoomSnapshot({ currentTrack, currentTime, isPlaying, queue });
+        } else {
+          const seekSeconds = typeof currentTime === 'number'
+            ? (currentTime > 1000 ? currentTime / 1000 : currentTime)
+            : 0;
+
+          if (currentTrack && handlers.onRemoteTrackChange) {
+            handlers.onRemoteTrackChange(currentTrack, queue);
+          }
+          if (typeof seekSeconds === 'number' && handlers.onRemoteSeek) {
+            setTimeout(() => {
+              handlers.onRemoteSeek(seekSeconds);
+              if (isPlaying && handlers.onRemotePlay) {
+                handlers.onRemotePlay(seekSeconds);
+              } else if (!isPlaying && handlers.onRemotePause) {
+                handlers.onRemotePause(seekSeconds);
+              }
+            }, 100);
+          }
+        }
+      }
+    });
+
+    // Handle host remote sync broadcast for guests
+    jamSocket.on('guest_sync', (msg) => {
+      const payload = msg.payload || msg;
+      const currentTrack = payload.currentTrack;
+      const currentTime = payload.currentTime;
+      const isPlaying = Boolean(payload.isPlaying);
+
+      const room = get().currentRoom;
+      if (room) {
+        set({
+          currentRoom: {
+            ...room,
+            currentTrack: currentTrack !== undefined ? currentTrack : room.currentTrack,
+            state: isPlaying ? 'playing' : 'paused',
+          },
+        });
+      }
+
+      const handlers = get().externalAudioSyncHandlers;
+      if (handlers) {
+        if (handlers.onGuestSync) {
+          handlers.onGuestSync({ currentTrack, currentTime, isPlaying });
+        } else {
+          const seekSeconds = typeof currentTime === 'number'
+            ? (currentTime > 1000 ? currentTime / 1000 : currentTime)
+            : 0;
+
+          if (currentTrack && handlers.onRemoteTrackChange) {
+            handlers.onRemoteTrackChange(currentTrack);
+          }
+          if (typeof seekSeconds === 'number' && handlers.onRemoteSeek) {
+            handlers.onRemoteSeek(seekSeconds);
+          }
+          if (isPlaying && handlers.onRemotePlay) {
+            handlers.onRemotePlay(seekSeconds);
+          } else if (!isPlaying && handlers.onRemotePause) {
+            handlers.onRemotePause(seekSeconds);
+          }
+        }
+      }
+    });
+
+    // Handle host ending jam session or disconnecting
+    jamSocket.on('host_left', () => {
+      useUiStore.getState().showToast('The host ended the Jam');
+      get().leaveRoom();
+    });
+
+    // Legacy individual playback synchronization listeners (Host -> Guests)
     jamSocket.on('PLAY', (msg) => {
       const handlers = get().externalAudioSyncHandlers;
       if (handlers?.onRemotePlay) {
@@ -197,45 +363,98 @@ export const useJamStore = create((set, get) => ({
   },
 
   /**
+   * Host-only sync broadcast method
+   */
+  hostSync: ({ currentTrack, currentTime, isPlaying }) => {
+    const room = get().currentRoom;
+    const userId = get().userId || getStoredUserId();
+    if (!room || room.hostId !== userId) return;
+    const roomId = room.roomId || room.id;
+
+    jamSocket.send({
+      type: 'host_sync',
+      roomId,
+      hostId: userId,
+      currentTrack,
+      currentTime,
+      isPlaying,
+      payload: {
+        roomId,
+        hostId: userId,
+        currentTrack,
+        currentTime,
+        isPlaying,
+      },
+    });
+  },
+
+  /**
    * Broadcast Host playback controls
    */
   broadcastPlay: (currentTime) => {
     const room = get().currentRoom;
     if (!room) return;
+    const roomId = room.roomId || room.id;
     jamSocket.send({
       type: 'PLAY',
-      roomId: room.roomId || room.id,
+      roomId,
       payload: { currentTime },
+    });
+    get().hostSync({
+      currentTrack: room.currentTrack,
+      currentTime,
+      isPlaying: true,
     });
   },
 
   broadcastPause: (currentTime) => {
     const room = get().currentRoom;
     if (!room) return;
+    const roomId = room.roomId || room.id;
     jamSocket.send({
       type: 'PAUSE',
-      roomId: room.roomId || room.id,
+      roomId,
       payload: { currentTime },
+    });
+    get().hostSync({
+      currentTrack: room.currentTrack,
+      currentTime,
+      isPlaying: false,
     });
   },
 
   broadcastSeek: (position) => {
     const room = get().currentRoom;
     if (!room) return;
+    const roomId = room.roomId || room.id;
     jamSocket.send({
       type: 'SEEK',
-      roomId: room.roomId || room.id,
+      roomId,
       payload: { position },
+    });
+    get().hostSync({
+      currentTrack: room.currentTrack,
+      currentTime: position,
+      isPlaying: true,
     });
   },
 
   broadcastTrackChange: (track) => {
     const room = get().currentRoom;
     if (!room) return;
+    const roomId = room.roomId || room.id;
+    if (room) {
+      set({ currentRoom: { ...room, currentTrack: track } });
+    }
     jamSocket.send({
       type: 'TRACK_CHANGE',
-      roomId: room.roomId || room.id,
+      roomId,
       payload: { track },
+    });
+    get().hostSync({
+      currentTrack: track,
+      currentTime: 0,
+      isPlaying: true,
     });
   },
 

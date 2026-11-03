@@ -1,9 +1,17 @@
 import React, { useState, useContext } from 'react';
-import { Volume2, Shield, Smile, Trash2, Check, Copy } from 'lucide-react';
+import { Volume2, Shield, Smile, Trash2, Check, Copy, Radio, Download, Smartphone } from 'lucide-react';
 import { PageHeader } from '../components/shared';
 import { AudioContext } from '../context/AudioContext';
 import { useLibraryStore } from '../store/useLibraryStore';
+import { useUiStore } from '../store/useUiStore';
+import { usePwaInstall } from '../hooks/usePwaInstall';
 import { getGuestId } from '../services/api';
+
+const PLAYBACK_ENGINES = [
+  { id: 'Auto', label: 'Auto', desc: 'Background audio on mobile, YouTube on desktop' },
+  { id: 'Audio stream', label: 'Audio stream', desc: 'Native audio element with lock-screen controls' },
+  { id: 'YouTube player', label: 'YouTube player', desc: 'Official YouTube IFrame player' },
+];
 
 const AUDIO_QUALITIES = [
   { id: '24bit', label: '24-Bit / 96kHz', desc: 'Hi-Res Lossless FLAC / bit-perfect' },
@@ -21,6 +29,8 @@ const MOOD_OPTIONS = [
 export default function SettingsView() {
   const { privacyMode, setPrivacyMode, showToast } = useContext(AudioContext);
   const { mood, mode, setMood, setMode } = useLibraryStore();
+  const { playbackEngine, setPlaybackEngine } = useUiStore();
+  const { canInstall, isIosSafari, isStandalone, promptInstall } = usePwaInstall();
 
   const [selectedQuality, setSelectedQuality] = useState('24bit');
   const [crossfade, setCrossfade] = useState(2);
@@ -52,7 +62,94 @@ export default function SettingsView() {
       />
 
       <div className="space-y-4">
-        {/* 1. Audio Engine & Quality */}
+        {/* 1. Playback Engine Architecture */}
+        <section className="sc-card p-4 rounded-2xl">
+          <div className="flex items-center gap-2 mb-3">
+            <Radio className="w-4 h-4 text-[#1ED760]" aria-hidden="true" />
+            <h2 className="text-xs font-semibold text-[#F4F4F2] uppercase tracking-wider">
+              Playback Engine
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+            {PLAYBACK_ENGINES.map((eng) => {
+              const isSelected = playbackEngine === eng.id;
+              return (
+                <button
+                  key={eng.id}
+                  onClick={() => {
+                    setPlaybackEngine(eng.id);
+                    showToast(`Playback engine set to ${eng.label}`);
+                  }}
+                  aria-label={`Select ${eng.label}`}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                    isSelected
+                      ? 'border-[#1ED760] bg-[#1ED760]/10 text-[#F4F4F2]'
+                      : 'border-white/10 bg-white/5 text-[#8A8A8E] hover:text-[#F4F4F2] hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-xs text-[#F4F4F2]">{eng.label}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-[#1ED760]" aria-hidden="true" />}
+                  </div>
+                  <span className="text-[10px] text-[#8A8A8E]">{eng.desc}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* 2. PWA Application Installation */}
+        <section className="sc-card p-4 rounded-2xl">
+          <div className="flex items-center gap-2 mb-2">
+            <Smartphone className="w-4 h-4 text-[#1ED760]" aria-hidden="true" />
+            <h2 className="text-xs font-semibold text-[#F4F4F2] uppercase tracking-wider">
+              App Installation & Offline
+            </h2>
+          </div>
+          <p className="text-xs text-[#8A8A8E] mb-3">
+            Install Super Culture as a standalone PWA on mobile or desktop for background playback, lock-screen controls, and offline capabilities.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.04] border border-white/10">
+            <div className="min-w-0">
+              {isStandalone ? (
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#1ED760] animate-pulse" />
+                  <span className="text-xs font-semibold text-[#F4F4F2]">Installed (Standalone Mode)</span>
+                </div>
+              ) : canInstall ? (
+                <div>
+                  <span className="text-xs font-semibold text-[#F4F4F2]">Install Available</span>
+                  <p className="text-[11px] text-[#8A8A8E]">Ready to install directly to your device home screen or dock.</p>
+                </div>
+              ) : isIosSafari ? (
+                <div>
+                  <span className="text-xs font-semibold text-[#F4F4F2]">iOS Safari Installation</span>
+                  <p className="text-[11px] text-[#8A8A8E]">Tap <span className="text-white font-medium">Share</span> then <span className="text-white font-medium">&apos;Add to Home Screen&apos;</span></p>
+                </div>
+              ) : (
+                <div>
+                  <span className="text-xs font-semibold text-[#F4F4F2]">Web Browser Mode</span>
+                  <p className="text-[11px] text-[#8A8A8E]">Supported on Chrome, Edge, and iOS Safari for home screen install.</p>
+                </div>
+              )}
+            </div>
+
+            {canInstall && (
+              <button
+                onClick={promptInstall}
+                aria-label="Install Super Culture application"
+                className="px-4 py-2 rounded-full bg-[#1ED760] text-[#0B0B0C] text-xs font-bold hover:scale-105 active:scale-95 transition cursor-pointer flex items-center gap-2 shrink-0 shadow-lg shadow-[#1ED760]/20"
+              >
+                <Download className="w-4 h-4" />
+                <span>Install App</span>
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* 2. Audio Engine & Quality */}
         <section className="sc-card p-4 rounded-2xl">
           <div className="flex items-center gap-2 mb-3">
             <Volume2 className="w-4 h-4 text-[#1ED760]" aria-hidden="true" />

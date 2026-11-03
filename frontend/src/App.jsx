@@ -4,12 +4,15 @@ import { X, Library, Radio } from 'lucide-react';
 import { AudioProvider, AudioContext } from './context/AudioContext';
 import { useJamStore } from './store/useJamStore';
 import { useUiStore } from './store/useUiStore';
-import YouTubePlayer from './components/YouTubePlayer';
+import { useMediaSession } from './hooks/useMediaSession';
+import { apiClient } from './services/api';
+import AudioEngineHost from './components/AudioEngineHost';
 import EditorialBackground from './components/EditorialBackground';
 import TopBar from './components/TopBar';
 import LeftSidebar from './components/LeftSidebar';
 import RightSidebar from './components/RightSidebar';
 import PlayerBar from './components/PlayerBar';
+import InstallPrompt from './components/InstallPrompt';
 import { AddToPlaylistModal } from './components/shared';
 
 // Page Views
@@ -33,25 +36,69 @@ function AppLayout() {
   const { isMobileMenuOpen, closeMobileMenu } = useUiStore();
   const [mobileTab, setMobileTab] = useState('nav');
 
+  // Mount native lock-screen / notification controls
+  useMediaSession();
+
   // Close mobile drawer on route transition
   useEffect(() => {
     closeMobileMenu();
   }, [location.pathname, closeMobileMenu]);
 
+  // Non-blocking Render health check on app load to wake up free-tier instance
+  useEffect(() => {
+    apiClient.health.ping();
+  }, []);
+
   // Synchronize remote Host commands across WebSocket
   useEffect(() => {
     registerAudioSyncHandlers({
-      onRemotePlay: () => {
+      onRemotePlay: (time) => {
+        if (typeof time === 'number') seekTo(time);
         if (!isPlaying) togglePlay();
       },
-      onRemotePause: () => {
+      onRemotePause: (time) => {
+        if (typeof time === 'number') seekTo(time);
         if (isPlaying) togglePlay();
       },
       onRemoteSeek: (pos) => {
         if (typeof pos === 'number') seekTo(pos);
       },
-      onRemoteTrackChange: (track) => {
-        if (track) playTrack(track);
+      onRemoteTrackChange: (track, queue) => {
+        if (track) playTrack(track, queue);
+      },
+      onRoomSnapshot: ({ currentTrack, currentTime, isPlaying: remoteIsPlaying, queue }) => {
+        const seekSeconds = typeof currentTime === 'number'
+          ? (currentTime > 1000 ? currentTime / 1000 : currentTime)
+          : 0;
+        if (currentTrack) {
+          playTrack(currentTrack, queue);
+          if (seekSeconds > 0) {
+            setTimeout(() => {
+              seekTo(seekSeconds);
+            }, 300);
+          }
+          if (remoteIsPlaying && !isPlaying) {
+            togglePlay();
+          } else if (!remoteIsPlaying && isPlaying) {
+            togglePlay();
+          }
+        }
+      },
+      onGuestSync: ({ currentTrack, currentTime, isPlaying: remoteIsPlaying }) => {
+        const seekSeconds = typeof currentTime === 'number'
+          ? (currentTime > 1000 ? currentTime / 1000 : currentTime)
+          : 0;
+        if (currentTrack && currentTrack.videoId) {
+          playTrack(currentTrack);
+        }
+        if (typeof seekSeconds === 'number') {
+          seekTo(seekSeconds);
+        }
+        if (remoteIsPlaying && !isPlaying) {
+          togglePlay();
+        } else if (!remoteIsPlaying && isPlaying) {
+          togglePlay();
+        }
       },
     });
   }, [isPlaying, togglePlay, seekTo, playTrack, registerAudioSyncHandlers]);
@@ -59,7 +106,7 @@ function AppLayout() {
   return (
     <div
       id="app-canvas"
-      className="relative w-full h-[100dvh] max-h-[100dvh] bg-[#0B0B0C] overflow-hidden flex flex-col justify-between select-none"
+      className="relative w-full h-[100dvh] max-h-[100dvh] bg-[#0B0B0C] overflow-hidden flex flex-col justify-between overscroll-none"
     >
       {/* Layer 0: Background & Hairline Grid */}
       <EditorialBackground />
@@ -103,34 +150,34 @@ function AppLayout() {
               <button
                 onClick={closeMobileMenu}
                 aria-label="Close navigation menu"
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer"
+                className="w-11 h-11 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Tab Switcher: "Library & Nav" | "Jam & Social" */}
-            <div className="sc-pill p-1 flex items-center shrink-0">
+            <div className="sc-pill p-1 flex items-center shrink-0 min-h-[44px]">
               <button
                 onClick={() => setMobileTab('nav')}
-                className={`flex-1 py-1.5 rounded-full text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                className={`flex-1 min-h-[40px] py-1.5 rounded-full text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   mobileTab === 'nav'
                     ? 'bg-[#F4F4F2] text-[#0B0B0C] font-semibold shadow-sm'
                     : 'text-[#8A8A8E] hover:text-[#F4F4F2]'
                 }`}
               >
-                <Library className="w-3.5 h-3.5" />
+                <Library className="w-4 h-4" />
                 <span>Library & Nav</span>
               </button>
               <button
                 onClick={() => setMobileTab('social')}
-                className={`flex-1 py-1.5 rounded-full text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                className={`flex-1 min-h-[40px] py-1.5 rounded-full text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   mobileTab === 'social'
                     ? 'bg-[#F4F4F2] text-[#0B0B0C] font-semibold shadow-sm'
                     : 'text-[#8A8A8E] hover:text-[#F4F4F2]'
                 }`}
               >
-                <Radio className="w-3.5 h-3.5" />
+                <Radio className="w-4 h-4" />
                 <span>Jam & Social</span>
               </button>
             </div>
@@ -146,7 +193,10 @@ function AppLayout() {
       {/* 4. Fixed Audio Player Bar */}
       <PlayerBar />
 
-      {/* 5. Global Add to Playlist Modal */}
+      {/* 5. In-App PWA Install and Update Notifications */}
+      <InstallPrompt />
+
+      {/* 6. Global Add to Playlist Modal */}
       <AddToPlaylistModal />
     </div>
   );
@@ -155,7 +205,7 @@ function AppLayout() {
 export default function App() {
   return (
     <AudioProvider>
-      <YouTubePlayer />
+      <AudioEngineHost />
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Home />} />

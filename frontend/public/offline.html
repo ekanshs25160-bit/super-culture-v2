@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Super Culture — Offline</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0B0B0C;
+        color: #F4F4F2;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100dvh;
+        text-align: center;
+      }
+      .card {
+        max-width: 420px;
+        margin: 20px;
+        padding: 40px 28px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        backdrop-filter: blur(20px);
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #F87171;
+        font-size: 11px;
+        font-family: monospace;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 20px;
+      }
+      h1 {
+        font-family: Georgia, serif;
+        font-style: italic;
+        font-size: 32px;
+        font-weight: 400;
+        margin: 0 0 12px;
+        letter-spacing: -0.02em;
+      }
+      p {
+        color: #8A8A8E;
+        font-size: 13px;
+        line-height: 1.6;
+        margin: 0 0 28px;
+      }
+      button {
+        background: #1ED760;
+        color: #0B0B0C;
+        border: none;
+        padding: 12px 28px;
+        border-radius: 9999px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.15s, opacity 0.15s;
+      }
+      button:active {
+        transform: scale(0.96);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="badge">Connection Lost</div>
+      <h1>Signal Interrupted</h1>
+      <p>Super Culture requires an active network connection to stream archival audio and sync live Jam sessions.</p>
+      <button onclick="window.location.reload()">Retry Connection</button>
+    </div>
+  </body>
+</html>

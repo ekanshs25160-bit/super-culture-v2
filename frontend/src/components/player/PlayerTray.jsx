@@ -33,21 +33,21 @@ export default function PlayerTray({
       <button
         onClick={onToggleShuffle}
         aria-label="Toggle shuffle"
-        className={`p-1.5 transition cursor-pointer ${isShuffle ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
+        className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer ${isShuffle ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
       >
         <Shuffle className="w-4 h-4" />
       </button>
       <button
         onClick={onToggleRepeat}
         aria-label="Toggle repeat"
-        className={`p-1.5 transition cursor-pointer ${isRepeat ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
+        className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer ${isRepeat ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
       >
         <Repeat className="w-4 h-4" />
       </button>
       <button
         onClick={onAddToPlaylist}
         aria-label="Add track to playlist"
-        className="p-1.5 text-[#8A8A8E] hover:text-white transition cursor-pointer"
+        className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-white transition cursor-pointer"
       >
         <Plus className="w-4 h-4" />
       </button>

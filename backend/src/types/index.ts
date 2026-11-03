@@ -110,13 +110,29 @@ export type JamSocketAction =
   | 'USER_JOINED'
   | 'USER_LEFT'
   | 'HEARTBEAT'
-  | 'ERROR';
+  | 'ERROR'
+  | 'create_room'
+  | 'join_room'
+  | 'room_snapshot'
+  | 'host_sync'
+  | 'guest_sync'
+  | 'host_left'
+  | 'CREATE_ROOM'
+  | 'JOIN_ROOM'
+  | 'ROOM_SNAPSHOT'
+  | 'HOST_SYNC'
+  | 'GUEST_SYNC'
+  | 'HOST_LEFT';
 
-export interface JamSocketMessage<T = unknown> {
-  type: JamSocketAction;
+export interface JamSocketMessage<T = any> {
+  type: JamSocketAction | string;
   roomId: string;
   userId?: string;
-  payload: T;
+  hostId?: string;
+  currentTrack?: any;
+  currentTime?: number;
+  isPlaying?: boolean;
+  payload?: T;
   timestamp: number;
 }
 

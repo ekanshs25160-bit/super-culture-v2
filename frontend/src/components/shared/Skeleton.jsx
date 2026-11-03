@@ -1,4 +1,23 @@
 import React from 'react';
+import { useServerWakeState } from '../../services/api';
+
+/**
+ * Animated banner notifying users when Render free-tier cold-start is in progress (>3s)
+ */
+export function ServerWakeBadge() {
+  const isWakingUp = useServerWakeState();
+  if (!isWakingUp) return null;
+
+  return (
+    <div
+      role="status"
+      className="flex items-center gap-2 px-3 py-2 mb-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-mono animate-pulse select-none"
+    >
+      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block shrink-0" />
+      <span>Waking up the server...</span>
+    </div>
+  );
+}
 
 /**
  * Reusable loading skeletons with .sc-shimmer glass effect.
@@ -12,9 +31,12 @@ export default function Skeleton({ className = '' }) {
   );
 }
 
+Skeleton.WakeBadge = ServerWakeBadge;
+
 Skeleton.Row = function SkeletonRow({ count = 3 }) {
   return (
     <div className="space-y-2 w-full" aria-label="Loading tracks" aria-busy="true">
+      <ServerWakeBadge />
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
@@ -52,15 +74,13 @@ Skeleton.Card = function SkeletonCard() {
 
 Skeleton.Grid = function SkeletonGrid({ count = 6 }) {
   return (
-    <div
-      className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 w-full"
-      aria-label="Loading content"
-      aria-busy="true"
-    >
-      {Array.from({ length: count }).map((_, i) => (
-        <Skeleton.Card key={i} />
-      ))}
+    <div className="w-full" aria-label="Loading content" aria-busy="true">
+      <ServerWakeBadge />
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 w-full">
+        {Array.from({ length: count }).map((_, i) => (
+          <Skeleton.Card key={i} />
+        ))}
+      </div>
     </div>
   );
 };
-

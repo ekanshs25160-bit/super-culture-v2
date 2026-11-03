@@ -14,6 +14,7 @@ import {
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
 import CoverImage from './shared/CoverImage';
+import Skeleton from './shared/Skeleton';
 
 export default function LeftSidebar() {
   const { showToast } = useAudio();
@@ -67,7 +68,7 @@ export default function LeftSidebar() {
                 to={item.to}
                 end={item.to === '/'}
                 className={({ isActive }) =>
-                  `nav-btn w-full flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${
+                  `nav-btn w-full min-h-[44px] flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${
                     isActive
                       ? 'nav-item-active text-[#F4F4F2]'
                       : 'text-[#8A8A8E] hover:text-[#F4F4F2] hover:bg-white/5'
@@ -112,17 +113,17 @@ export default function LeftSidebar() {
             <button
               onClick={handleCreatePlaylist}
               aria-label="Create Playlist"
-              className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer"
+              className="w-8 h-8 sm:w-7 sm:h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer min-w-[32px] min-h-[32px]"
             >
-              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+              <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
             </button>
             {/* Arrow-out Button */}
             <button
               onClick={() => navigate('/library')}
               aria-label="Expand Library"
-              className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer"
+              className="w-8 h-8 sm:w-7 sm:h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer min-w-[32px] min-h-[32px]"
             >
-              <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
+              <ArrowUpRight className="w-4 h-4 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -131,6 +132,7 @@ export default function LeftSidebar() {
           {/* Loading Glass Skeletons */}
           {loading && (
             <div className="space-y-2">
+              <Skeleton.WakeBadge />
               <div className="flex items-center gap-3 p-1.5 rounded-2xl sc-shimmer h-12">
                 <div className="w-10 h-10 rounded-xl bg-white/10 shrink-0" />
                 <div className="flex-1 space-y-1.5">
