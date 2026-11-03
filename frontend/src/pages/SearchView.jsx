@@ -56,21 +56,13 @@ export default function SearchView() {
         if (!res.ok) throw new Error('Search failed');
         const json = await res.json();
 
-        const rawTracks = Array.isArray(json.tracks)
-          ? json.tracks
-          : Array.isArray(json.data)
-          ? json.data
-          : Array.isArray(json.data?.tracks)
-          ? json.data.tracks
-          : Array.isArray(json)
-          ? json
-          : [];
+        const rawTracks = Array.isArray(json.tracks) ? json.tracks
+          : Array.isArray(json.data) ? json.data
+          : Array.isArray(json.data?.tracks) ? json.data.tracks
+          : Array.isArray(json) ? json : [];
 
-        const rawArtists = Array.isArray(json.artists)
-          ? json.artists
-          : Array.isArray(json.data?.artists)
-          ? json.data.artists
-          : [];
+        const rawArtists = Array.isArray(json.artists) ? json.artists
+          : Array.isArray(json.data?.artists) ? json.data.artists : [];
 
         const normalizedTracks = rawTracks.map((t) => ({
           ...t,
@@ -132,7 +124,7 @@ export default function SearchView() {
   const paginatedTracks = tracks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
-    <div className="sc-card p-5 sm:p-6 w-full h-full flex flex-col min-h-0 overflow-y-auto no-scrollbar rounded-[24px]">
+    <div className="sc-card p-3.5 sm:p-6 w-full h-full flex flex-col min-h-0 overflow-y-auto no-scrollbar rounded-[24px] pb-28">
       <PageHeader title="Search" meta={query ? `RESULTS FOR "${query.toUpperCase()}"` : 'EXPLORE ARCHIVE'} />
 
       {/* Horizontally Scrollable High-Contrast Genre Chips */}

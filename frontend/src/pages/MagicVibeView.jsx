@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Sparkles, Play, BookmarkPlus, Disc } from 'lucide-react';
+import React, { useState, useContext } from 'react';
+import { Sparkles, Play, BookmarkPlus, Disc, Radio, Pause } from 'lucide-react';
 import { PageHeader, TrackRow, Skeleton } from '../components/shared';
+import { AudioContext } from '../context/AudioContext';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { apiClient } from '../services/api';
@@ -19,11 +20,44 @@ export default function MagicVibeView() {
   const [prompt, setPrompt] = useState('');
   const [activeChip, setActiveChip] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const [activeVibeTracks, setActiveVibeTracks] = useState(INITIAL_TRACK_QUEUE);
   const [generationMeta, setGenerationMeta] = useState('Initial Curated Selection');
 
   const { playTrack, showToast } = useAudio();
+  const { isAiDjActive, toggleAiDj } = useContext(AudioContext);
   const { createPlaylist } = useLibraryStore();
+
+  const handleAiDjClick = async () => {
+    if (!isAiDjActive) {
+      setIsAiLoading(true);
+      toggleAiDj();
+      showToast('AI DJ initializing smart queue...');
+      try {
+        const recs = await apiClient.ai.getAIDJ();
+        if (Array.isArray(recs) && recs.length > 0) {
+          const rec = recs[0];
+          playTrack({
+            id: `ai-dj-${Date.now()}`,
+            videoId: 'MV_3Dpw-BRY',
+            title: rec.title,
+            artist: `${rec.artist} • ${rec.reason || 'AI DJ Mix'}`,
+            cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=544&h=544&fit=crop',
+            duration: '3:30',
+            seconds: 210,
+          });
+          showToast(`AI DJ: Now Playing ${rec.title}`);
+        }
+      } catch (err) {
+        console.warn('[MagicVibe] AI DJ error:', err);
+      } finally {
+        setIsAiLoading(false);
+      }
+    } else {
+      toggleAiDj();
+      showToast('AI DJ Paused');
+    }
+  };
 
   const handleGenerate = async (customPrompt, chipLabel) => {
     const text = customPrompt || prompt;
@@ -81,19 +115,63 @@ export default function MagicVibeView() {
   };
 
   return (
-    <div className="w-full h-full flex flex-col overflow-y-auto no-scrollbar px-2 py-1 pb-24">
+    <div className="w-full h-full flex flex-col overflow-y-auto no-scrollbar px-2 py-1 pb-28">
       <PageHeader
         title="Magic Vibe"
         meta="GEMINI 2.0 AI SYNTHESIZER"
-        subtitle="Prompt the avant-garde editorial tastemaker to synthesize a sonic atmosphere."
+        subtitle="Prompt the avant-garde editorial tastemaker to synthesize an autonomous sonic atmosphere."
       />
 
-      {/* AI Prompt Input Card */}
+      {/* Module 1: Dedicated AI DJ Autonomous Mixing Card */}
+      <div className="sc-card p-4 sm:p-5 mb-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0 bg-gradient-to-r from-white/[0.04] to-[#1ED760]/[0.05] border border-white/10">
+        <div className="flex items-start gap-3.5 min-w-0">
+          <div className="w-11 h-11 rounded-2xl bg-[#1ED760]/10 border border-[#1ED760]/30 flex items-center justify-center text-[#1ED760] shrink-0 shadow-[0_0_20px_rgba(30,215,96,0.2)]">
+            <Radio className="w-5 h-5" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="meta-label text-[10px] text-[#1ED760] tracking-wider">
+                AI DJ • LIVE AUTONOMOUS MIXING
+              </span>
+              {isAiDjActive && (
+                <span className="w-2 h-2 rounded-full bg-[#1ED760] glow-green-sm animate-pulse" />
+              )}
+            </div>
+            <h2 className="text-sm font-semibold text-[#F4F4F2]">
+              Autonomous Adaptive DJ
+            </h2>
+            <p className="text-xs text-[#8A8A8E] mt-0.5 line-clamp-2 max-w-lg">
+              Synthesizes consecutive track transitions tailored to your session taste memory and real-time playback velocity.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={handleAiDjClick}
+          aria-label={isAiDjActive ? 'Pause Autonomous AI DJ' : 'Start Autonomous AI DJ'}
+          className={`sc-pill px-4 py-2.5 rounded-full text-xs font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 shadow-lg ${
+            isAiDjActive
+              ? 'bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] shadow-[0_0_24px_rgba(30,215,96,0.4)]'
+              : 'bg-white/10 hover:bg-white/20 text-[#F4F4F2] hover:border-white/30'
+          }`}
+        >
+          {isAiLoading ? (
+            <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          ) : isAiDjActive ? (
+            <Pause className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
+          ) : (
+            <Sparkles className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
+          )}
+          <span>{isAiDjActive ? 'AI DJ Live (Click to Pause)' : 'Start AI DJ Mix'}</span>
+        </button>
+      </div>
+
+      {/* Module 2: AI Prompt Input Card */}
       <div className="sc-card p-4 mb-4 rounded-2xl shrink-0">
         <label className="meta-label text-[10px] text-[#8A8A8E] block mb-2">
           DESCRIBE YOUR DESIRED SONIC ATMOSPHERE
         </label>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             value={prompt}
@@ -112,7 +190,7 @@ export default function MagicVibeView() {
             onClick={() => handleGenerate()}
             disabled={isGenerating}
             aria-label="Synthesize music vibe"
-            className="sc-pill px-4 bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+            className="sc-pill px-4 py-2.5 bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] font-semibold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0"
           >
             {isGenerating ? (
               <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
@@ -150,16 +228,16 @@ export default function MagicVibeView() {
         </div>
       </div>
 
-      {/* Generated Playlist Card / Toolbar */}
+      {/* Module 3: Generated Playlist Toolbar */}
       <div className="sc-card p-4 mb-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1ED760] to-[#0A8742] flex items-center justify-center text-black shadow-md shrink-0">
             <Disc className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-[#F4F4F2]">
+            <h3 className="text-sm font-semibold text-[#F4F4F2]">
               {generationMeta}
-            </h2>
+            </h3>
             <p className="text-xs text-[#8A8A8E]">
               {activeVibeTracks.length} Curated Tracks • Gemini 2.0 Flash
             </p>

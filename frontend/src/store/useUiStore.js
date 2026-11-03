@@ -8,6 +8,7 @@ export const useUiStore = create((set) => ({
   isSettingsOpen: false,
   isAiDjLive: false,
   addToPlaylistTrack: null,
+  isMobileMenuOpen: false,
 
   showToast: (message, duration = 3000) => {
     if (toastTimer) clearTimeout(toastTimer);
@@ -29,4 +30,7 @@ export const useUiStore = create((set) => ({
 
   setAiDjLive: (isLive) => set({ isAiDjLive: isLive }),
   toggleAiDj: () => set((state) => ({ isAiDjLive: !state.isAiDjLive })),
+
+  toggleMobileMenu: () => set((s) => ({ isMobileMenuOpen: !s.isMobileMenuOpen })),
+  closeMobileMenu: () => set({ isMobileMenuOpen: false }),
 }));

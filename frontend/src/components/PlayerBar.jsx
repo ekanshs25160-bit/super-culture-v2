@@ -1,6 +1,6 @@
 import { useContext, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Plus } from 'lucide-react';
+import { Heart, Plus, SlidersHorizontal } from 'lucide-react';
 import { AudioContext } from '../context/AudioContext';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { useUiStore } from '../store/useUiStore';
@@ -8,36 +8,22 @@ import { useJamStore } from '../store/useJamStore';
 import { apiClient } from '../services/api';
 import PlayerTransport from './player/PlayerTransport';
 import PlayerUtilities from './player/PlayerUtilities';
+import PlayerTray from './player/PlayerTray';
 import CoverImage from './shared/CoverImage';
 
-function formatTime(seconds) {
-  if (isNaN(seconds) || seconds < 0) return '0:00';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
+const formatTime = (sec) => {
+  if (isNaN(sec) || sec < 0) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
   return `${m}:${s < 10 ? '0' : ''}${s}`;
-}
+};
 
 export default function PlayerBar() {
   const {
-    currentTrack,
-    queue,
-    isPlaying,
-    currentTime,
-    duration,
-    volume,
-    isShuffle,
-    isRepeat,
-    isEmptyPlayer,
-    toastMessage,
-    playTrack,
-    togglePlay,
-    skipNext,
-    skipPrev,
-    seekTo,
-    setVolumeLevel,
-    toggleShuffle,
-    toggleRepeat,
-    showToast,
+    currentTrack, queue, isPlaying, currentTime, duration, volume,
+    isShuffle, isRepeat, isEmptyPlayer, toastMessage, playTrack,
+    togglePlay, skipNext, skipPrev, seekTo, setVolumeLevel,
+    toggleShuffle, toggleRepeat, showToast,
   } = useContext(AudioContext);
 
   const isLiked = useLibraryStore((s) => s.isLiked(currentTrack?.videoId || currentTrack?.id));
@@ -45,16 +31,23 @@ export default function PlayerBar() {
   const openAddToPlaylist = useUiStore((s) => s.openAddToPlaylist);
   const navigate = useNavigate();
 
-  const currentRoom = useJamStore((s) => s.currentRoom);
-  const broadcastPlay = useJamStore((s) => s.broadcastPlay);
-  const broadcastPause = useJamStore((s) => s.broadcastPause);
-  const broadcastSeek = useJamStore((s) => s.broadcastSeek);
-  const broadcastTrackChange = useJamStore((s) => s.broadcastTrackChange);
+  const { currentRoom, broadcastPlay, broadcastPause, broadcastSeek, broadcastTrackChange } = useJamStore();
 
   const progressTrackRef = useRef(null);
   const volumeTrackRef = useRef(null);
+  const trayRef = useRef(null);
   const [serverUpNext, setServerUpNext] = useState(null);
+  const [isTrayOpen, setIsTrayOpen] = useState(false);
   const lastLoggedRef = useRef(null);
+
+  // Close tray on click outside
+  useEffect(() => {
+    const handleOutside = (e) => {
+      if (trayRef.current && !trayRef.current.contains(e.target)) setIsTrayOpen(false);
+    };
+    if (isTrayOpen) document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isTrayOpen]);
 
   // Active queue next track
   const currentIndex = queue.findIndex(
@@ -64,14 +57,12 @@ export default function PlayerBar() {
     ? queue[(currentIndex + 1 + queue.length) % queue.length]
     : queue[0] || currentTrack;
 
-  // Real server-backed up-next track recommendation & history logging
   useEffect(() => {
     if (!currentTrack?.videoId) return;
-
     let isMounted = true;
-    const fetchUpNext = async () => {
-      try {
-        const res = await apiClient.music.getUpNext(currentTrack.videoId);
+
+    apiClient.music.getUpNext(currentTrack.videoId)
+      .then((res) => {
         if (isMounted && res?.tracks?.length > 0) {
           const raw = res.tracks[0];
           setServerUpNext({
@@ -80,12 +71,8 @@ export default function PlayerBar() {
             cover: raw.cover || raw.thumbnailUrl || raw.thumbnail_url,
           });
         }
-      } catch (err) {
-        console.warn('[PlayerBar] UpNext error:', err);
-      }
-    };
-
-    fetchUpNext();
+      })
+      .catch(() => {});
 
     const trackKey = `${currentTrack.videoId || currentTrack.id}_${currentTrack.title}`;
     if (isPlaying && lastLoggedRef.current !== trackKey) {
@@ -97,12 +84,9 @@ export default function PlayerBar() {
       }).catch(() => {});
     }
 
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [currentTrack, isPlaying]);
 
-  // Next track prioritized from real active queue when multiple tracks exist
   const nextTrack = (queue && queue.length > 1) ? queueNextTrack : (serverUpNext || queueNextTrack);
 
   const handleLikeClick = (e) => {
@@ -115,19 +99,14 @@ export default function PlayerBar() {
 
   const handleMasterPlay = () => {
     if (currentRoom) {
-      if (isPlaying) {
-        broadcastPause(currentTime);
-      } else {
-        broadcastPlay(currentTime);
-      }
+      if (isPlaying) broadcastPause(currentTime);
+      else broadcastPlay(currentTime);
     }
     togglePlay();
   };
 
   const handleSkipNext = () => {
-    if (currentRoom && nextTrack) {
-      broadcastTrackChange(nextTrack);
-    }
+    if (currentRoom && nextTrack) broadcastTrackChange(nextTrack);
     skipNext();
   };
 
@@ -135,9 +114,7 @@ export default function PlayerBar() {
     if (queue.length > 1) {
       handleSkipNext();
     } else if (serverUpNext) {
-      if (currentRoom) {
-        broadcastTrackChange(serverUpNext);
-      }
+      if (currentRoom) broadcastTrackChange(serverUpNext);
       playTrack(serverUpNext);
     } else {
       handleSkipNext();
@@ -156,15 +133,13 @@ export default function PlayerBar() {
     const rect = progressTrackRef.current.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const target = ratio * totalSeconds;
-    if (currentRoom) {
-      broadcastSeek(target);
-    }
+    if (currentRoom) broadcastSeek(target);
     seekTo(target);
   };
 
   const handleVolumeClick = (e) => {
-    if (!volumeTrackRef.current) return;
-    const rect = volumeTrackRef.current.getBoundingClientRect();
+    const el = volumeTrackRef.current || e.currentTarget;
+    const rect = el.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     setVolumeLevel(ratio);
   };
@@ -172,19 +147,35 @@ export default function PlayerBar() {
   return (
     <>
       <footer className="fixed bottom-0 left-0 right-0 z-40 flex justify-center pointer-events-none">
-        <div className="w-full max-w-[1600px] px-5 pb-2.5 pointer-events-auto">
-          <div className="sc-oled-bar px-4 py-2.5 flex flex-col md:flex-row items-center justify-between gap-4">
-            {/* LEFT: Album Art, Track Name, Artist, Green Heart, Add Button */}
-            <div className="flex items-center gap-3 w-full md:w-[30%] min-w-0">
+        <div className="w-full max-w-[1600px] px-3 sm:px-5 pb-2 sm:pb-2.5 pointer-events-auto relative">
+          <PlayerTray
+            isOpen={isTrayOpen}
+            trayRef={trayRef}
+            isShuffle={isShuffle}
+            isRepeat={isRepeat}
+            volumePct={volumePct}
+            onToggleShuffle={toggleShuffle}
+            onToggleRepeat={toggleRepeat}
+            onVolumeClick={handleVolumeClick}
+            onAddToPlaylist={(e) => {
+              e.stopPropagation();
+              if (currentTrack) openAddToPlaylist(currentTrack);
+              setIsTrayOpen(false);
+            }}
+          />
+
+          <div className="sc-oled-bar px-3 sm:px-4 py-2 sm:py-2.5 flex flex-col md:flex-row items-center justify-between gap-2.5 md:gap-4">
+            {/* LEFT: Album Art, Track Title, Artist, Heart, Add Button */}
+            <div className="flex items-center gap-2.5 sm:gap-3 w-full md:w-[30%] min-w-0">
               {!isEmptyPlayer && currentTrack ? (
-                <div id="player-left-active" className="flex items-center gap-3 min-w-0 w-full">
-                  <div className="relative w-12 h-12 shrink-0">
+                <div id="player-left-active" className="flex items-center gap-2.5 sm:gap-3 min-w-0 w-full">
+                  <div className="relative w-10 h-10 sm:w-12 sm:h-12 shrink-0">
                     <CoverImage
                       id="player-cover"
                       src={currentTrack.cover}
                       alt=""
-                      iconSize="w-5 h-5"
-                      className="w-12 h-12 rounded-2xl object-cover border border-white/15 shadow-md"
+                      iconSize="w-4 h-4"
+                      className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl object-cover border border-white/15 shadow-md"
                     />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -195,11 +186,9 @@ export default function PlayerBar() {
                       id="player-artist"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (currentTrack.artist) {
-                          navigate(`/artist/${encodeURIComponent(currentTrack.artist)}`);
-                        }
+                        if (currentTrack.artist) navigate(`/artist/${encodeURIComponent(currentTrack.artist)}`);
                       }}
-                      className="text-xs text-[#8A8A8E] truncate hover:underline hover:text-[#1ED760] transition cursor-pointer"
+                      className="text-[11px] sm:text-xs text-[#8A8A8E] truncate hover:underline hover:text-[#1ED760] transition cursor-pointer"
                     >
                       {currentTrack.artist}
                     </p>
@@ -209,13 +198,22 @@ export default function PlayerBar() {
                     id="like-btn"
                     onClick={handleLikeClick}
                     aria-label={isLiked ? 'Remove from Liked Songs' : 'Save to Liked Songs'}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center transition shrink-0 cursor-pointer ${
+                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition shrink-0 cursor-pointer ${
                       isLiked
-                        ? 'bg-[#1ED760]/15 border border-[#1ED760]/40 text-[#1ED760] shadow-[0_0_12px_rgba(30,215,96,0.3)] hover:scale-105'
+                        ? 'bg-[#1ED760]/15 border border-[#1ED760]/40 text-[#1ED760] shadow-[0_0_12px_rgba(30,215,96,0.3)]'
                         : 'bg-black/85 hover:bg-black/95 border border-white/14 text-[#8A8A8E] hover:text-white'
                     }`}
                   >
-                    <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} aria-hidden="true" />
+                    <Heart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isLiked ? 'fill-current' : ''}`} aria-hidden="true" />
+                  </button>
+
+                  {/* Mobile Utilities Tray Toggle */}
+                  <button
+                    onClick={() => setIsTrayOpen((prev) => !prev)}
+                    aria-label="Toggle extra player controls"
+                    className="md:hidden w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#8A8A8E] hover:text-white transition cursor-pointer shrink-0"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
                   </button>
 
                   <button
@@ -224,19 +222,19 @@ export default function PlayerBar() {
                       openAddToPlaylist(currentTrack);
                     }}
                     aria-label="Add track to playlist"
-                    className="w-8 h-8 rounded-full bg-black/85 hover:bg-black/95 border border-white/14 hover:border-white/28 flex items-center justify-center text-[#8A8A8E] hover:text-white transition shrink-0 cursor-pointer"
+                    className="hidden md:flex w-8 h-8 rounded-full bg-black/85 hover:bg-black/95 border border-white/14 hover:border-white/28 items-center justify-center text-[#8A8A8E] hover:text-white transition shrink-0 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
               ) : (
-                <div id="player-left-empty" className="flex items-center gap-3 min-w-0 w-full">
-                  <div className="w-12 h-12 rounded-2xl bg-black/80 border border-dashed border-white/15 flex items-center justify-center text-[#8A8A8E] shrink-0 font-mono text-[10px]">
+                <div id="player-left-empty" className="flex items-center gap-2.5 sm:gap-3 min-w-0 w-full">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-black/80 border border-dashed border-white/15 flex items-center justify-center text-[#8A8A8E] shrink-0 font-mono text-[9px] sm:text-[10px]">
                     OFF
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="meta-label text-[#F4F4F2]">NO TRACK</p>
-                    <p className="text-xs text-[#8A8A8E] truncate mt-0.5">Select a track</p>
+                    <p className="text-[11px] sm:text-xs text-[#8A8A8E] truncate mt-0.5">Select a track</p>
                   </div>
                 </div>
               )}
@@ -261,15 +259,16 @@ export default function PlayerBar() {
               onSeekClick={handleSeekClick}
             />
 
-            {/* RIGHT: "PLAYING NEXT" Pill, Lyrics, Devices, Volume */}
-            <PlayerUtilities
-              nextTrack={nextTrack}
-              volumeTrackRef={volumeTrackRef}
-              volumePct={volumePct}
-              onNextClick={handleNextClick}
-              onVolumeClick={handleVolumeClick}
-              onShowToast={showToast}
-            />
+            {/* RIGHT: "UP NEXT" Pill & Volume (Desktop) */}
+            <div className="hidden md:flex items-center justify-end gap-2 w-[30%] shrink-0">
+              <PlayerUtilities
+                nextTrack={nextTrack}
+                volumeTrackRef={volumeTrackRef}
+                volumePct={volumePct}
+                onNextClick={handleNextClick}
+                onVolumeClick={handleVolumeClick}
+              />
+            </div>
           </div>
         </div>
       </footer>
@@ -277,7 +276,7 @@ export default function PlayerBar() {
       {/* Floating Editorial Toast Notification */}
       <div
         id="sc-toast"
-        className={`fixed bottom-28 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 sc-pill px-4 py-2 flex items-center gap-2.5 shadow-2xl ${
+        className={`fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 sc-pill px-4 py-2 flex items-center gap-2.5 shadow-2xl ${
           toastMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
         }`}
       >

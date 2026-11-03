@@ -20,11 +20,11 @@ export default function PlayerTransport({
   return (
     <div className="flex flex-col items-center justify-center w-full md:w-[40%] max-w-[520px]">
       <div className="flex items-center gap-5 mb-1.5">
-        {/* Shuffle */}
+        {/* Shuffle (Desktop only; on mobile lives in tray) */}
         <button
           onClick={onToggleShuffle}
           aria-label="Toggle shuffle"
-          className={`transition cursor-pointer ${
+          className={`hidden md:inline-flex items-center justify-center transition cursor-pointer ${
             isShuffle ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)]' : 'text-[#8A8A8E] hover:text-white'
           }`}
         >
@@ -74,11 +74,11 @@ export default function PlayerTransport({
           </svg>
         </button>
 
-        {/* Repeat */}
+        {/* Repeat (Desktop only; on mobile lives in tray) */}
         <button
           onClick={onToggleRepeat}
           aria-label="Toggle repeat"
-          className={`transition cursor-pointer ${
+          className={`hidden md:inline-flex items-center justify-center transition cursor-pointer ${
             isRepeat ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)]' : 'text-[#8A8A8E] hover:text-white'
           }`}
         >

@@ -1,25 +1,18 @@
 import { useState, useContext, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Search, Sparkles, Bell, Settings, Maximize2, Globe, Lock } from 'lucide-react';
+import { Search, Bell, Settings, Maximize2, Minimize2, Globe, Lock } from 'lucide-react';
 import { AudioContext } from '../context/AudioContext';
 import { useLibraryStore } from '../store/useLibraryStore';
-import { apiClient } from '../services/api';
+import { useUiStore } from '../store/useUiStore';
 import { NotificationsPopover, QuickSettingsPopover } from './TopBarPopovers';
 import Wordmark from './Wordmark';
 import CoverImage from './shared/CoverImage';
 
 export default function TopBar() {
   const location = useLocation();
-  const {
-    showToast,
-    isAiDjActive,
-    toggleAiDj,
-    privacyMode,
-    setPrivacyMode,
-    playTrack,
-  } = useContext(AudioContext);
-
+  const { privacyMode, setPrivacyMode, isAiDjActive } = useContext(AudioContext);
   const { mode, setMode } = useLibraryStore();
+  const { isMobileMenuOpen, toggleMobileMenu } = useUiStore();
 
   const navigate = useNavigate();
   const searchInputRef = useRef(null);
@@ -30,7 +23,7 @@ export default function TopBar() {
   const searchVal = typedVal !== null ? typedVal : qParam;
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [localTime, setLocalTime] = useState('');
 
   const notifRef = useRef(null);
@@ -42,6 +35,15 @@ export default function TopBar() {
     updateTime();
     const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Track Fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
   // ⌘K shortcut listener & click-outside to close popovers
@@ -87,41 +89,8 @@ export default function TopBar() {
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
-      showToast('Entered Fullscreen Canvas');
     } else {
       document.exitFullscreen().catch(() => {});
-      showToast('Exited Fullscreen Canvas');
-    }
-  };
-
-  const handleAiDjClick = async () => {
-    if (!isAiDjActive) {
-      setIsAiLoading(true);
-      toggleAiDj();
-      showToast('AI DJ initializing smart queue...');
-      try {
-        const recs = await apiClient.ai.getAIDJ();
-        if (Array.isArray(recs) && recs.length > 0) {
-          const rec = recs[0];
-          playTrack({
-            id: `ai-dj-${Date.now()}`,
-            videoId: 'MV_3Dpw-BRY',
-            title: rec.title,
-            artist: `${rec.artist} • ${rec.reason || 'AI DJ Mix'}`,
-            cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=544&h=544&fit=crop',
-            duration: '3:30',
-            seconds: 210,
-          });
-          showToast(`AI DJ: Now Playing ${rec.title}`);
-        }
-      } catch (err) {
-        console.warn('AI DJ error:', err);
-      } finally {
-        setIsAiLoading(false);
-      }
-    } else {
-      toggleAiDj();
-      showToast('AI DJ Paused');
     }
   };
 
@@ -130,8 +99,8 @@ export default function TopBar() {
     if (isAiDjActive) {
       modeLabel = 'AI DJ ACTIVE';
     } else {
-      const currentMode = mode || privacyMode;
-      if (currentMode === 'private') {
+      const active = mode || privacyMode;
+      if (active === 'private') {
         modeLabel = 'PRIVATE SESSION';
       }
     }
@@ -141,70 +110,78 @@ export default function TopBar() {
   const currentMode = mode || privacyMode;
 
   return (
-    <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 px-5 pt-2 pb-2">
-      {/* Left: Compact Editorial Wordmark + Frosted Pill Search + Green "Start AI DJ" Pill */}
-      <div className="flex items-center gap-2.5 flex-wrap">
-        {/* Compact Wordmark in TopBar */}
-        <div className="mr-1">
+    <header className="relative z-30 flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 pt-2 pb-2">
+      {/* Left: Hamburger (Mobile) + Wordmark + Frosted Pill Search */}
+      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+        {/* Animated Hamburger-to-Cross Button (Mobile/Tablet only) */}
+        <button
+          onClick={toggleMobileMenu}
+          aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          className="lg:hidden w-9 h-9 sc-pill flex items-center justify-center text-[#F4F4F2] transition cursor-pointer shrink-0"
+        >
+          <div className="relative w-4 h-3.5 flex flex-col justify-between">
+            <span
+              className={`block h-0.5 w-full bg-white rounded-full transition-all duration-300 origin-center ${
+                isMobileMenuOpen ? 'rotate-45 translate-y-[5.5px]' : ''
+              }`}
+            />
+            <span
+              className={`block h-0.5 w-full bg-white rounded-full transition-all duration-300 ${
+                isMobileMenuOpen ? 'opacity-0 scale-x-0' : 'opacity-100'
+              }`}
+            />
+            <span
+              className={`block h-0.5 w-full bg-white rounded-full transition-all duration-300 origin-center ${
+                isMobileMenuOpen ? '-rotate-45 -translate-y-[5.5px]' : ''
+              }`}
+            />
+          </div>
+        </button>
+
+        {/* Compact Editorial Wordmark */}
+        <div className="shrink-0 mr-0.5">
           <Wordmark variant="compact" />
         </div>
 
         {/* Frosted Pill Search Input Form */}
         <form
           onSubmit={handleSearchSubmit}
-          className="sc-pill flex items-center gap-2.5 px-4 h-10 w-[240px] sm:w-[310px] focus-within:border-white/30 focus-within:bg-black/80"
+          className="sc-pill flex items-center gap-2 px-3 sm:px-4 h-9 sm:h-10 w-[140px] xs:w-[180px] sm:w-[260px] md:w-[310px] focus-within:border-white/30 focus-within:bg-black/80"
         >
-          <Search className="w-4 h-4 text-[#8A8A8E] shrink-0" aria-hidden="true" />
+          <Search className="w-3.5 h-3.5 text-[#8A8A8E] shrink-0" aria-hidden="true" />
           <input
             ref={searchInputRef}
             id="global-search"
             type="text"
             value={searchVal}
             onChange={(e) => setTypedVal(e.target.value)}
-            placeholder="What do you want to play?"
+            placeholder="Search catalog..."
             aria-label="Global music search"
             className="bg-transparent border-none outline-none text-xs text-[#F4F4F2] placeholder-[#8A8A8E] w-full font-normal"
           />
-          <kbd className="hidden sm:inline-block meta-label text-[9px] text-[#8A8A8E] bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
+          <kbd className="hidden md:inline-block meta-label text-[9px] text-[#8A8A8E] bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
             ⌘K
           </kbd>
         </form>
-
-        {/* Green "Start AI DJ" Pill with Sparkle Icon */}
-        <button
-          id="ai-dj-btn"
-          onClick={handleAiDjClick}
-          aria-label={isAiDjActive ? 'Pause AI DJ' : 'Start AI DJ'}
-          className="h-10 px-4 rounded-full bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] font-medium text-xs flex items-center gap-2 shadow-[0_0_24px_rgba(30,215,96,0.35)] hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
-        >
-          {isAiLoading ? (
-            <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Sparkles className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
-          )}
-          <span id="ai-dj-label" className="font-semibold tracking-tight">
-            {isAiDjActive ? 'AI DJ Live' : 'Start AI DJ'}
-          </span>
-        </button>
       </div>
 
-      {/* Center Active Mode Pill (Dark OLED Pill) */}
-      <div id="ai-status-banner" className="hidden lg:flex items-center gap-2.5 px-3.5 py-1.5 sc-pill shadow-[0_4px_20px_rgba(0,0,0,0.85)]">
+      {/* Center Active Mode Pill (Desktop OLED Pill) */}
+      <div id="ai-status-banner" className="hidden xl:flex items-center gap-2.5 px-3.5 py-1.5 sc-pill shadow-[0_4px_20px_rgba(0,0,0,0.85)] shrink-0">
         <span className="w-1.5 h-1.5 rounded-full bg-[#1ED760] glow-green-sm animate-pulse" aria-hidden="true" />
         <span id="mode-telemetry" className="meta-label text-[#F4F4F2]/90">
           {getTelemetryStatus()}
         </span>
       </div>
 
-      {/* Right: Segmented Pill "Public | Private" + Utility Pill */}
-      <div className="flex items-center gap-2.5">
-        {/* Segmented Pill: Public | Private */}
-        <div className="sc-pill p-1 flex items-center h-10">
+      {/* Right: Segmented Pill "Public | Private" + Utility Pill + Fullscreen */}
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {/* Segmented Pill: Public | Private (Hidden on small mobile) */}
+        <div className="hidden sm:flex sc-pill p-1 items-center h-9 sm:h-10">
           <button
             id="btn-mode-public"
             onClick={() => { setMode('public'); setPrivacyMode('public'); }}
             aria-label="Set session mode to public"
-            className={`h-8 px-3.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`h-7 sm:h-8 px-2.5 sm:px-3.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
               currentMode === 'public'
                 ? 'bg-[#F4F4F2] text-[#0B0B0C] shadow-sm font-semibold'
                 : 'text-[#8A8A8E] hover:text-[#F4F4F2]'
@@ -217,7 +194,7 @@ export default function TopBar() {
             id="btn-mode-private"
             onClick={() => { setMode('private'); setPrivacyMode('private'); }}
             aria-label="Set session mode to private"
-            className={`h-8 px-3.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`h-7 sm:h-8 px-2.5 sm:px-3.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
               currentMode === 'private'
                 ? 'bg-[#F4F4F2] text-[#0B0B0C] shadow-sm font-semibold'
                 : 'text-[#8A8A8E] hover:text-[#F4F4F2]'
@@ -229,29 +206,29 @@ export default function TopBar() {
         </div>
 
         {/* Dark Utility Pill with Popovers */}
-        <div className="relative flex items-center gap-2">
-          <div className="sc-pill h-10 px-2.5 flex items-center gap-2">
-            {/* Notification Bell with Popover Trigger */}
+        <div className="relative flex items-center gap-1.5">
+          <div className="sc-pill h-9 sm:h-10 px-2 sm:px-2.5 flex items-center gap-1.5 sm:gap-2">
+            {/* Notification Bell */}
             <div ref={notifRef} className="relative">
               <button
                 onClick={() => { setIsNotifOpen((prev) => !prev); setIsSettingsOpen(false); }}
                 aria-label="Notifications"
-                className="relative w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
+                className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
               >
-                <Bell className="w-4 h-4" aria-hidden="true" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#1ED760] ring-2 ring-[#141416]" />
+                <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#1ED760] ring-2 ring-[#141416]" />
               </button>
               {isNotifOpen && <NotificationsPopover />}
             </div>
 
-            {/* Settings Gear with Popover Trigger */}
+            {/* Settings Gear */}
             <div ref={settingsRef} className="relative">
               <button
                 onClick={() => { setIsSettingsOpen((prev) => !prev); setIsNotifOpen(false); }}
                 aria-label="Settings"
-                className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
+                className="w-6 h-6 sm:w-7 sm:h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-[#F4F4F2]/85 hover:text-white transition cursor-pointer"
               >
-                <Settings className="w-4 h-4" aria-hidden="true" />
+                <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
               </button>
               {isSettingsOpen && (
                 <QuickSettingsPopover
@@ -265,7 +242,7 @@ export default function TopBar() {
             <button
               onClick={() => navigate('/library')}
               aria-label="Go to library profile"
-              className="w-7 h-7 rounded-full overflow-hidden border border-white/25 hover:border-[#1ED760] transition cursor-pointer"
+              className="w-6 h-6 sm:w-7 sm:h-7 rounded-full overflow-hidden border border-white/25 hover:border-[#1ED760] transition cursor-pointer"
             >
               <CoverImage
                 src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=80"
@@ -277,13 +254,17 @@ export default function TopBar() {
           </div>
         </div>
 
-        {/* Separate Circular Fullscreen Button */}
+        {/* Fullscreen Button in TopBar */}
         <button
           onClick={toggleFullscreen}
-          aria-label="Toggle Fullscreen"
-          className="sc-pill w-10 h-10 flex items-center justify-center text-[#F4F4F2]/80 hover:text-white cursor-pointer"
+          aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          className="sc-pill w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center text-[#F4F4F2]/80 hover:text-white transition cursor-pointer"
         >
-          <Maximize2 className="w-4 h-4" aria-hidden="true" />
+          {isFullscreen ? (
+            <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
+          ) : (
+            <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
+          )}
         </button>
       </div>
     </header>
