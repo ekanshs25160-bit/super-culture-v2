@@ -40,6 +40,28 @@ describe('Super Culture v2.0 - Backend Hardening & Speed Suite', () => {
       assert.equal(res.headers['access-control-allow-credentials'], 'true');
     });
 
+    it('allows requests from deployed Render frontend with credentials and headers', async () => {
+      const res = await request(app)
+        .get('/health')
+        .set('Origin', 'https://super-culture-v2.onrender.com');
+
+      assert.equal(res.status, 200);
+      assert.equal(res.headers['access-control-allow-origin'], 'https://super-culture-v2.onrender.com');
+      assert.equal(res.headers['access-control-allow-credentials'], 'true');
+    });
+
+    it('handles preflight OPTIONS requests for Render frontend', async () => {
+      const res = await request(app)
+        .options('/api/music/home-shelves')
+        .set('Origin', 'https://super-culture-v2.onrender.com')
+        .set('Access-Control-Request-Method', 'GET')
+        .set('Access-Control-Request-Headers', 'x-guest-id,content-type');
+
+      assert.equal(res.status, 204);
+      assert.equal(res.headers['access-control-allow-origin'], 'https://super-culture-v2.onrender.com');
+      assert.equal(res.headers['access-control-allow-credentials'], 'true');
+    });
+
     it('allows server-to-server or probe requests without Origin header', async () => {
       const res = await request(app).get('/health');
       assert.equal(res.status, 200);

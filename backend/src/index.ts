@@ -62,8 +62,9 @@ app.use(
   })
 );
 
-// Access Control - Strict CORS allowlist
+// Access Control - Strict CORS allowlist & preflight handling
 app.use(cors(getCorsOptions()));
+app.options('*', cors(getCorsOptions()));
 
 // Signed Cookie Parser for Passcode Authentication
 app.use(cookieParser(env.cookieSecret));

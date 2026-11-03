@@ -156,7 +156,7 @@ The Super Culture backend is optimized for zero-cost deployment on platforms lik
 |---|---|---|---|
 | `PORT` | Optional | `5001` | HTTP & WebSocket server port |
 | `NODE_ENV` | Optional | `development` | Set to `production` for containerized runs to enforce secure cookies |
-| `CORS_ORIGIN` | Optional | `*` (dev only) | Comma-separated list of allowed frontend origins (e.g., `https://super-culture.onrender.com`) |
+| `CORS_ORIGIN` | Optional | `https://super-culture-v2.onrender.com` | Comma-separated list of allowed frontend origins (e.g., `https://super-culture-v2.onrender.com,http://localhost:3000`) |
 | `APP_PASSCODE` | Optional | `""` | Shared secret passcode gating all `/api` routes with signed cookies |
 | `COOKIE_SECRET` | Optional | Auto-derived | Secret key used to sign session cookies |
 | `STREAM_SECRET` | Optional | Auto-derived | HMAC secret for signing 5-minute temporary audio streaming tokens |
