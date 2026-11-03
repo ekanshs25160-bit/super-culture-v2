@@ -10,7 +10,6 @@ import CoverImage from './shared/CoverImage';
 
 export default function TopBar() {
   const location = useLocation();
-  const isHome = location.pathname === '/';
   const {
     showToast,
     isAiDjActive,
@@ -143,14 +142,12 @@ export default function TopBar() {
 
   return (
     <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 px-5 pt-2 pb-2">
-      {/* Left: Compact Editorial Wordmark (non-home routes) + Frosted Pill Search + Green "Start AI DJ" Pill */}
+      {/* Left: Compact Editorial Wordmark + Frosted Pill Search + Green "Start AI DJ" Pill */}
       <div className="flex items-center gap-2.5 flex-wrap">
-        {/* Compact Wordmark replacing round logo on non-home routes */}
-        {!isHome && (
-          <div className="mr-1">
-            <Wordmark variant="compact" />
-          </div>
-        )}
+        {/* Compact Wordmark in TopBar */}
+        <div className="mr-1">
+          <Wordmark variant="compact" />
+        </div>
 
         {/* Frosted Pill Search Input Form */}
         <form

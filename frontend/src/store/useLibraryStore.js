@@ -217,6 +217,13 @@ export const useLibraryStore = create((set, get) => ({
     return { removed: true, playlistName };
   },
 
+  updatePlaylistName: (playlistId, newName) =>
+    set((state) => ({
+      playlists: state.playlists.map((p) =>
+        p.id === playlistId ? { ...p, name: newName } : p
+      ),
+    })),
+
   createPlaylistWithTrack: async (name, track) => {
     const created = await get().createPlaylist(name);
     if (created && track) {

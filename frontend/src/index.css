@@ -25,6 +25,17 @@
   --accent-green: #1ED760;
 }
 
+@layer base {
+  button, input, select, textarea {
+    @apply text-[#F4F4F2];
+  }
+  
+  /* Ensure placeholder text isn't pitch black either */
+  input::placeholder, textarea::placeholder {
+    @apply text-white/40;
+  }
+}
+
 * {
   box-sizing: border-box;
   user-select: none;
@@ -158,25 +169,10 @@ body, html {
 }
 
 /* Equalizer Animation */
-@keyframes eqBar1 {
-  0%, 100% { height: 4px; }
-  50% { height: 14px; }
-}
-@keyframes eqBar2 {
-  0%, 100% { height: 13px; }
-  35% { height: 4px; }
-  75% { height: 15px; }
-}
-@keyframes eqBar3 {
-  0%, 100% { height: 6px; }
-  45% { height: 15px; }
-  80% { height: 5px; }
-}
-@keyframes eqBar4 {
-  0%, 100% { height: 11px; }
-  25% { height: 4px; }
-  60% { height: 13px; }
-}
+@keyframes eqBar1 { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+@keyframes eqBar2 { 0%, 100% { height: 13px; } 35% { height: 4px; } 75% { height: 15px; } }
+@keyframes eqBar3 { 0%, 100% { height: 6px; } 45% { height: 15px; } 80% { height: 5px; } }
+@keyframes eqBar4 { 0%, 100% { height: 11px; } 25% { height: 4px; } 60% { height: 13px; } }
 
 .eq-bar-1 { animation: eqBar1 0.85s ease-in-out infinite; box-shadow: 0 0 8px rgba(30, 215, 96, 0.7); }
 .eq-bar-2 { animation: eqBar2 0.72s ease-in-out infinite; box-shadow: 0 0 8px rgba(30, 215, 96, 0.7); }

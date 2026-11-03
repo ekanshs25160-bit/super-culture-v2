@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Play, Shuffle, Heart } from 'lucide-react';
 import { PageHeader, TrackRow, CoverStack, EmptyState } from '../components/shared';
@@ -8,10 +8,18 @@ import { useLibraryStore } from '../store/useLibraryStore';
 export default function PlaylistView() {
   const { playlistId } = useParams();
   const { playTrack, toggleShuffle, showToast } = useAudio();
-  const { likedSongs, playlists: storePlaylists, removeTrackFromPlaylist } = useLibraryStore();
+  const {
+    likedSongs,
+    playlists: storePlaylists,
+    removeTrackFromPlaylist,
+    updatePlaylistName,
+  } = useLibraryStore();
 
   const isLikedSongs = playlistId === 'liked-songs';
   const customPlaylist = storePlaylists.find((p) => p.id === playlistId);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
 
   let title = 'Playlist';
   let description = 'Personal playlist collection.';
@@ -69,6 +77,14 @@ export default function PlaylistView() {
     }
   };
 
+  const handleNameSave = () => {
+    if (customPlaylist && editName.trim() && editName.trim() !== customPlaylist.name) {
+      updatePlaylistName(customPlaylist.id, editName.trim());
+      showToast(`Renamed playlist to "${editName.trim()}"`);
+    }
+    setIsEditing(false);
+  };
+
   return (
     <div className="w-full h-full flex flex-col overflow-y-auto no-scrollbar px-2 py-1 pb-24">
       <PageHeader
@@ -92,9 +108,38 @@ export default function PlaylistView() {
           <span className="meta-label text-[10px] text-[#1ED760] mb-1.5 block">
             {isLikedSongs ? 'PINNED VAULT' : 'PLAYLIST ARCHIVE'}
           </span>
-          <h2 className="font-serif italic text-2xl sm:text-3xl font-semibold text-[#F4F4F2] tracking-tight mb-1 truncate">
-            {title}
-          </h2>
+          {customPlaylist && isEditing ? (
+            <input
+              type="text"
+              autoFocus
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={handleNameSave}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleNameSave();
+                if (e.key === 'Escape') {
+                  setEditName(customPlaylist.name);
+                  setIsEditing(false);
+                }
+              }}
+              className="bg-black/50 border border-white/20 text-2xl sm:text-3xl font-serif text-white px-3 py-1 rounded-lg outline-none focus:border-[#1ED760] mb-1 w-full max-w-md"
+            />
+          ) : (
+            <h2
+              onClick={() => {
+                if (customPlaylist) {
+                  setEditName(customPlaylist.name || title);
+                  setIsEditing(true);
+                }
+              }}
+              className={`font-serif italic text-2xl sm:text-3xl font-semibold text-[#F4F4F2] tracking-tight mb-1 truncate ${
+                customPlaylist ? 'cursor-pointer hover:text-[#1ED760] transition-colors' : ''
+              }`}
+              title={customPlaylist ? 'Click to rename' : undefined}
+            >
+              {title}
+            </h2>
+          )}
           <p className="text-xs text-[#8A8A8E] line-clamp-2 mb-4 max-w-xl">
             {description}
           </p>
