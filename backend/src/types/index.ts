@@ -73,69 +73,6 @@ export interface FriendStatus {
   lastActiveMinutes: number;
 }
 
-export interface JamParticipant {
-  uid: string;
-  name: string;
-  joinedAt: string;
-  lastSeen: string;
-  avatarUrl?: string;
-}
-
-export interface JamRoom {
-  roomId: string;
-  roomCode: string;
-  name: string;
-  hostId: string;
-  isPrivate: boolean;
-  state: PlaybackState;
-  queue: TrackMeta[];
-  currentTrackIndex: number;
-  seekPosition: number;
-  startedAt?: string | null;
-  lastActive: string;
-  participants: JamParticipant[];
-  voteCount: number;
-  voteRoundId: number;
-}
-
-export type JamSocketAction =
-  | 'JOIN'
-  | 'SYNC'
-  | 'PLAY'
-  | 'PAUSE'
-  | 'SEEK'
-  | 'TRACK_CHANGE'
-  | 'ADD_QUEUE'
-  | 'VOTE_SKIP'
-  | 'USER_JOINED'
-  | 'USER_LEFT'
-  | 'HEARTBEAT'
-  | 'ERROR'
-  | 'create_room'
-  | 'join_room'
-  | 'room_snapshot'
-  | 'host_sync'
-  | 'guest_sync'
-  | 'host_left'
-  | 'CREATE_ROOM'
-  | 'JOIN_ROOM'
-  | 'ROOM_SNAPSHOT'
-  | 'HOST_SYNC'
-  | 'GUEST_SYNC'
-  | 'HOST_LEFT';
-
-export interface JamSocketMessage<T = any> {
-  type: JamSocketAction | string;
-  roomId: string;
-  userId?: string;
-  hostId?: string;
-  currentTrack?: any;
-  currentTime?: number;
-  isPlaying?: boolean;
-  payload?: T;
-  timestamp: number;
-}
-
 export interface VibeRequest {
   mood?: string;
   genre?: string;

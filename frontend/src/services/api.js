@@ -199,30 +199,6 @@ export const apiClient = {
       return res.data;
     },
   },
-
-  // Jam Synchronous Rooms API
-  jam: {
-    getActiveRooms: async () => {
-      const res = await api.get('/jam/active/public');
-      return res.data;
-    },
-    createRoom: async (name, isPrivate = false) => {
-      const res = await api.post('/jam/create', { name, isPrivate });
-      return res.data;
-    },
-    joinRoom: async (roomId, guestName = 'Super Culture Member') => {
-      const res = await api.post('/jam/join', { roomId, guestName });
-      return res.data;
-    },
-    addToQueue: async (roomId, song, playImmediately = false) => {
-      const res = await api.post(`/jam/${roomId}/queue`, { song, playImmediately });
-      return res.data;
-    },
-    sendHeartbeat: async (roomId) => {
-      const res = await api.post(`/jam/${roomId}/heartbeat`);
-      return res.data;
-    },
-  },
 };
 
 export default api;

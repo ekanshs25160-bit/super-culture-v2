@@ -1,5 +1,4 @@
 import React from 'react';
-import { useJamStore } from '../../store/useJamStore';
 
 export default function PlayerTransport({
   isPlaying,
@@ -18,41 +17,19 @@ export default function PlayerTransport({
   onSkipPrev,
   onSkipNext,
   onSeekClick,
-  isGuest = false,
 }) {
-  const storeUserId = useJamStore((s) => s.userId);
-  const storeCurrentRoom = useJamStore((s) => s.currentRoom);
-  const isGuestUser =
-    Boolean(isGuest) ||
-    Boolean(
-      storeCurrentRoom &&
-      storeCurrentRoom.hostId &&
-      storeUserId &&
-      storeCurrentRoom.hostId !== storeUserId
-    );
-
   return (
     <div className="flex flex-col items-center justify-center w-full md:w-[40%] max-w-[520px]">
-      {isGuestUser && (
-        <div className="text-[10px] text-[#1ED760] font-mono tracking-wider flex items-center gap-1.5 mb-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#1ED760] animate-pulse" />
-          <span>CONTROLLED BY JAM HOST</span>
-        </div>
-      )}
-
       <div className="flex items-center gap-4 mb-1.5">
         {/* Shuffle (Desktop only; on mobile lives in tray/sheet) */}
         <button
-          onClick={isGuestUser ? undefined : onToggleShuffle}
-          disabled={isGuestUser}
+          onClick={onToggleShuffle}
           aria-label="Toggle shuffle"
-          title={isGuestUser ? 'Playback controlled by Jam host' : 'Toggle shuffle'}
-          className={`hidden md:inline-flex min-w-[44px] min-h-[44px] rounded-full items-center justify-center transition ${
-            isGuestUser
-              ? 'opacity-30 cursor-not-allowed'
-              : isShuffle
-              ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)] cursor-pointer'
-              : 'text-[#8A8A8E] hover:text-white cursor-pointer'
+          title="Toggle shuffle"
+          className={`hidden md:inline-flex min-w-[44px] min-h-[44px] rounded-full items-center justify-center transition cursor-pointer ${
+            isShuffle
+              ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)]'
+              : 'text-[#8A8A8E] hover:text-white'
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
@@ -62,15 +39,10 @@ export default function PlayerTransport({
 
         {/* Previous */}
         <button
-          onClick={isGuestUser ? undefined : onSkipPrev}
-          disabled={isGuestUser}
+          onClick={onSkipPrev}
           aria-label="Previous track"
-          title={isGuestUser ? 'Playback controlled by Jam host' : 'Previous track'}
-          className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition ${
-            isGuestUser
-              ? 'opacity-30 cursor-not-allowed text-[#8A8A8E]'
-              : 'text-[#F4F4F2]/85 hover:text-white cursor-pointer'
-          }`}
+          title="Previous track"
+          className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition text-[#F4F4F2]/85 hover:text-white cursor-pointer"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 20L9 12l10-8v16zM5 19V5" />
@@ -81,15 +53,10 @@ export default function PlayerTransport({
         {isAutoplayBlocked ? (
           <button
             id="master-play-btn"
-            onClick={isGuestUser ? undefined : onTogglePlay}
-            disabled={isGuestUser}
+            onClick={onTogglePlay}
             aria-label="Tap to play audio"
-            title={isGuestUser ? 'Playback controlled by Jam host' : 'Tap to play audio'}
-            className={`min-h-[44px] px-4 rounded-full bg-[#1ED760] text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(30,215,96,0.6)] transition ${
-              isGuestUser
-                ? 'opacity-40 cursor-not-allowed'
-                : 'hover:scale-105 active:scale-95 animate-pulse cursor-pointer'
-            }`}
+            title="Tap to play audio"
+            className="min-h-[44px] px-4 rounded-full bg-[#1ED760] text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(30,215,96,0.6)] transition hover:scale-105 active:scale-95 animate-pulse cursor-pointer"
           >
             <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
@@ -99,21 +66,10 @@ export default function PlayerTransport({
         ) : (
           <button
             id="master-play-btn"
-            onClick={isGuestUser ? undefined : onTogglePlay}
-            disabled={isGuestUser}
+            onClick={onTogglePlay}
             aria-label={isPlaying && !isEmptyPlayer ? 'Pause track' : 'Play track'}
-            title={
-              isGuestUser
-                ? 'Playback controlled by Jam host'
-                : isPlaying && !isEmptyPlayer
-                ? 'Pause track'
-                : 'Play track'
-            }
-            className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.3)] transition ${
-              isGuestUser
-                ? 'bg-[#F4F4F2]/40 text-[#0B0B0C]/60 cursor-not-allowed'
-                : 'bg-[#F4F4F2] text-[#0B0B0C] hover:scale-105 active:scale-95 cursor-pointer'
-            }`}
+            title={isPlaying && !isEmptyPlayer ? 'Pause track' : 'Play track'}
+            className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.3)] transition bg-[#F4F4F2] text-[#0B0B0C] hover:scale-105 active:scale-95 cursor-pointer"
           >
             {isPlaying && !isEmptyPlayer ? (
               <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
@@ -130,15 +86,10 @@ export default function PlayerTransport({
 
         {/* Next */}
         <button
-          onClick={isGuestUser ? undefined : onSkipNext}
-          disabled={isGuestUser}
+          onClick={onSkipNext}
           aria-label="Next track"
-          title={isGuestUser ? 'Playback controlled by Jam host' : 'Next track'}
-          className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition ${
-            isGuestUser
-              ? 'opacity-30 cursor-not-allowed text-[#8A8A8E]'
-              : 'text-[#F4F4F2]/85 hover:text-white cursor-pointer'
-          }`}
+          title="Next track"
+          className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition text-[#F4F4F2]/85 hover:text-white cursor-pointer"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 4l10 8-10 8V4zM19 5v14" />
@@ -147,16 +98,13 @@ export default function PlayerTransport({
 
         {/* Repeat (Desktop only; on mobile lives in tray/sheet) */}
         <button
-          onClick={isGuestUser ? undefined : onToggleRepeat}
-          disabled={isGuestUser}
+          onClick={onToggleRepeat}
           aria-label="Toggle repeat"
-          title={isGuestUser ? 'Playback controlled by Jam host' : 'Toggle repeat'}
-          className={`hidden md:inline-flex min-w-[44px] min-h-[44px] rounded-full items-center justify-center transition ${
-            isGuestUser
-              ? 'opacity-30 cursor-not-allowed'
-              : isRepeat
-              ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)] cursor-pointer'
-              : 'text-[#8A8A8E] hover:text-white cursor-pointer'
+          title="Toggle repeat"
+          className={`hidden md:inline-flex min-w-[44px] min-h-[44px] rounded-full items-center justify-center transition cursor-pointer ${
+            isRepeat
+              ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)]'
+              : 'text-[#8A8A8E] hover:text-white'
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
@@ -175,11 +123,8 @@ export default function PlayerTransport({
         <div
           ref={progressTrackRef}
           id="progress-track"
-          onClick={isGuestUser ? undefined : onSeekClick}
-          title={isGuestUser ? 'Playback controlled by Jam host' : undefined}
-          className={`relative flex-1 h-11 flex items-center ${
-            isGuestUser ? 'cursor-not-allowed opacity-60' : 'cursor-pointer group'
-          }`}
+          onClick={onSeekClick}
+          className="relative flex-1 h-11 flex items-center cursor-pointer group"
         >
           <div className="sc-oled-track w-full h-1.5 rounded-full overflow-hidden">
             <div
@@ -188,13 +133,11 @@ export default function PlayerTransport({
               style={{ width: `${isEmptyPlayer ? 0 : progressPct}%` }}
             />
           </div>
-          {!isGuestUser && (
-            <div
-              id="progress-thumb"
-              className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)] opacity-0 group-hover:opacity-100 transition absolute pointer-events-none"
-              style={{ left: `calc(${isEmptyPlayer ? 0 : progressPct}% - 5px)` }}
-            />
-          )}
+          <div
+            id="progress-thumb"
+            className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)] opacity-0 group-hover:opacity-100 transition absolute pointer-events-none"
+            style={{ left: `calc(${isEmptyPlayer ? 0 : progressPct}% - 5px)` }}
+          />
         </div>
         <span id="time-total" className="font-mono text-[10px] text-[#8A8A8E] w-7">
           {isEmptyPlayer ? '0:00' : formatTime(totalSeconds)}

@@ -4,7 +4,6 @@ import { Heart, Plus, SlidersHorizontal, Play, Pause } from 'lucide-react';
 import { AudioContext } from '../context/AudioContext';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { useUiStore } from '../store/useUiStore';
-import { useJamStore } from '../store/useJamStore';
 import { apiClient } from '../services/api';
 import PlayerTransport from './player/PlayerTransport';
 import PlayerUtilities from './player/PlayerUtilities';
@@ -33,9 +32,6 @@ export default function PlayerBar() {
   const isAutoplayBlocked = useUiStore((s) => s.isAutoplayBlocked);
   const setAutoplayBlocked = useUiStore((s) => s.setAutoplayBlocked);
   const navigate = useNavigate();
-
-  const { currentRoom, userId, broadcastPlay, broadcastPause, broadcastSeek, broadcastTrackChange } = useJamStore();
-  const isGuest = Boolean(currentRoom && currentRoom.hostId && userId && currentRoom.hostId !== userId);
 
   const progressTrackRef = useRef(null);
   const volumeTrackRef = useRef(null);
@@ -103,7 +99,6 @@ export default function PlayerBar() {
   };
 
   const handleMasterPlay = () => {
-    if (isGuest) return;
     if (isAutoplayBlocked) {
       setAutoplayBlocked(false);
     }
@@ -113,30 +108,21 @@ export default function PlayerBar() {
         return;
       }
     }
-    if (currentRoom) {
-      if (isPlaying) broadcastPause(currentTime);
-      else broadcastPlay(currentTime);
-    }
     togglePlay();
   };
 
   const handleSkipNext = () => {
-    if (isGuest) return;
-    if (currentRoom && nextTrack) broadcastTrackChange(nextTrack);
     skipNext();
   };
 
   const handleSkipPrev = () => {
-    if (isGuest) return;
     skipPrev();
   };
 
   const handleNextClick = () => {
-    if (isGuest) return;
     if (queue.length > 1) {
       handleSkipNext();
     } else if (serverUpNext) {
-      if (currentRoom) broadcastTrackChange(serverUpNext);
       playTrack(serverUpNext);
     } else {
       handleSkipNext();
@@ -151,11 +137,10 @@ export default function PlayerBar() {
   const volumePct = Math.round((volume ?? 0.74) * 100);
 
   const handleSeekClick = (e) => {
-    if (isGuest || isEmptyPlayer || !progressTrackRef.current) return;
+    if (isEmptyPlayer || !progressTrackRef.current) return;
     const rect = progressTrackRef.current.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const target = ratio * totalSeconds;
-    if (currentRoom) broadcastSeek(target);
     seekTo(target);
   };
 
@@ -251,11 +236,8 @@ export default function PlayerBar() {
               {isAutoplayBlocked ? (
                 <button
                   onClick={handleMasterPlay}
-                  disabled={isGuest}
                   aria-label="Tap to play audio stream"
-                  className={`min-h-[44px] px-3.5 rounded-full bg-[#1ED760] text-[#0B0B0C] text-[11px] font-bold flex items-center gap-1.5 shadow-md shadow-[#1ED760]/30 transition ${
-                    isGuest ? 'opacity-40 cursor-not-allowed' : 'animate-pulse active:scale-95 cursor-pointer'
-                  }`}
+                  className="min-h-[44px] px-3.5 rounded-full bg-[#1ED760] text-[#0B0B0C] text-[11px] font-bold flex items-center gap-1.5 shadow-md shadow-[#1ED760]/30 transition animate-pulse active:scale-95 cursor-pointer"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
                   <span>PLAY</span>
@@ -263,11 +245,8 @@ export default function PlayerBar() {
               ) : (
                 <button
                   onClick={handleMasterPlay}
-                  disabled={isGuest}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
-                  className={`min-w-[44px] min-h-[44px] rounded-full bg-[#F4F4F2] text-[#0B0B0C] flex items-center justify-center shadow-md transition ${
-                    isGuest ? 'opacity-40 cursor-not-allowed' : 'active:scale-95 cursor-pointer'
-                  }`}
+                  className="min-w-[44px] min-h-[44px] rounded-full bg-[#F4F4F2] text-[#0B0B0C] flex items-center justify-center shadow-md transition active:scale-95 cursor-pointer"
                 >
                   {isPlaying ? (
                     <Pause className="w-4 h-4 fill-current" />
@@ -360,12 +339,11 @@ export default function PlayerBar() {
               progressTrackRef={progressTrackRef}
               formatTime={formatTime}
               onTogglePlay={handleMasterPlay}
-              onToggleShuffle={isGuest ? undefined : toggleShuffle}
-              onToggleRepeat={isGuest ? undefined : toggleRepeat}
+              onToggleShuffle={toggleShuffle}
+              onToggleRepeat={toggleRepeat}
               onSkipPrev={handleSkipPrev}
               onSkipNext={handleSkipNext}
               onSeekClick={handleSeekClick}
-              isGuest={isGuest}
             />
 
             {/* RIGHT: "UP NEXT" Pill & Volume (Desktop) */}
@@ -401,22 +379,17 @@ export default function PlayerBar() {
         onSkipPrev={handleSkipPrev}
         onSkipNext={handleNextClick}
         onSeek={(sec) => {
-          if (isGuest) return;
-          if (currentRoom) broadcastSeek(sec);
           seekTo(sec);
         }}
-        onToggleShuffle={isGuest ? undefined : toggleShuffle}
-        onToggleRepeat={isGuest ? undefined : toggleRepeat}
+        onToggleShuffle={toggleShuffle}
+        onToggleRepeat={toggleRepeat}
         onToggleLike={handleLikeClick}
         onSelectTrack={(track) => {
-          if (isGuest) return;
-          if (currentRoom) broadcastTrackChange(track);
           playTrack(track);
         }}
         onAddToPlaylist={() => {
           if (currentTrack) openAddToPlaylist(currentTrack);
         }}
-        isGuest={isGuest}
       />
 
       {/* Floating Editorial Toast Notification */}

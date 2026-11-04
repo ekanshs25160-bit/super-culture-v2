@@ -38,7 +38,6 @@ export default function NowPlayingSheet({
   onToggleLike,
   onSelectTrack,
   onAddToPlaylist,
-  isGuest = false,
 }) {
   const [showQueue, setShowQueue] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
@@ -249,22 +248,13 @@ export default function NowPlayingSheet({
 
       {/* 3. Bottom Controls: Scrubber & Transport Buttons */}
       <div className="w-full max-w-md mx-auto px-4 pb-2 shrink-0">
-        {isGuest && (
-          <div className="text-[10px] text-[#1ED760] font-mono tracking-wider flex items-center justify-center gap-1.5 mb-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#1ED760] animate-pulse" />
-            <span>CONTROLLED BY JAM HOST</span>
-          </div>
-        )}
-
         {/* Scrubber Seek Bar (44px touch area for effortless finger sliding) */}
         <div
           ref={progressBarRef}
-          onClick={isGuest ? undefined : handleSeekTouch}
-          onTouchStart={isGuest ? undefined : handleSeekTouch}
-          onTouchMove={isGuest ? undefined : handleSeekTouch}
-          className={`w-full h-11 flex flex-col justify-center ${
-            isGuest ? 'cursor-not-allowed opacity-60' : 'cursor-pointer group'
-          }`}
+          onClick={handleSeekTouch}
+          onTouchStart={handleSeekTouch}
+          onTouchMove={handleSeekTouch}
+          className="w-full h-11 flex flex-col justify-center cursor-pointer group"
         >
           <div className="w-full h-2 rounded-full bg-white/10 relative overflow-hidden">
             <div
@@ -282,15 +272,12 @@ export default function NowPlayingSheet({
         <div className="flex items-center justify-between w-full mt-2">
           {/* Shuffle */}
           <button
-            onClick={isGuest ? undefined : onToggleShuffle}
-            disabled={isGuest}
+            onClick={onToggleShuffle}
             aria-label="Toggle shuffle"
-            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition ${
-              isGuest
-                ? 'opacity-30 cursor-not-allowed'
-                : isShuffle
-                ? 'text-[#1ED760] cursor-pointer active:scale-95'
-                : 'text-[#8A8A8E] hover:text-white cursor-pointer active:scale-95'
+            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
+              isShuffle
+                ? 'text-[#1ED760]'
+                : 'text-[#8A8A8E] hover:text-white'
             }`}
           >
             <Shuffle className="w-5 h-5" />
@@ -298,14 +285,9 @@ export default function NowPlayingSheet({
 
           {/* Skip Previous */}
           <button
-            onClick={isGuest ? undefined : onSkipPrev}
-            disabled={isGuest}
+            onClick={onSkipPrev}
             aria-label="Previous track"
-            className={`min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center transition ${
-              isGuest
-                ? 'opacity-30 cursor-not-allowed text-[#8A8A8E]'
-                : 'text-[#F4F4F2] hover:scale-105 active:scale-95 cursor-pointer'
-            }`}
+            className="min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center transition text-[#F4F4F2] hover:scale-105 active:scale-95 cursor-pointer"
           >
             <SkipBack className="w-6 h-6 fill-current" />
           </button>
@@ -313,26 +295,18 @@ export default function NowPlayingSheet({
           {/* Master Play / Pause */}
           {isAutoplayBlocked ? (
             <button
-              onClick={isGuest ? undefined : onTogglePlay}
-              disabled={isGuest}
+              onClick={onTogglePlay}
               aria-label="Tap to play audio stream"
-              className={`min-h-[48px] px-5 rounded-full bg-[#1ED760] text-[#0B0B0C] text-xs font-bold flex items-center gap-2 shadow-xl shadow-[#1ED760]/30 transition ${
-                isGuest ? 'opacity-40 cursor-not-allowed' : 'animate-pulse active:scale-95 cursor-pointer'
-              }`}
+              className="min-h-[48px] px-5 rounded-full bg-[#1ED760] text-[#0B0B0C] text-xs font-bold flex items-center gap-2 shadow-xl shadow-[#1ED760]/30 transition animate-pulse active:scale-95 cursor-pointer"
             >
               <Play className="w-4 h-4 fill-current" />
               <span>TAP TO PLAY</span>
             </button>
           ) : (
             <button
-              onClick={isGuest ? undefined : onTogglePlay}
-              disabled={isGuest}
+              onClick={onTogglePlay}
               aria-label={isPlaying ? 'Pause' : 'Play'}
-              className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition ${
-                isGuest
-                  ? 'bg-[#F4F4F2]/40 text-[#0B0B0C]/60 cursor-not-allowed'
-                  : 'bg-[#F4F4F2] text-[#0B0B0C] hover:scale-105 active:scale-95 cursor-pointer'
-              }`}
+              className="w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition bg-[#F4F4F2] text-[#0B0B0C] hover:scale-105 active:scale-95 cursor-pointer"
             >
               {isPlaying ? (
                 <Pause className="w-7 h-7 fill-current" />
@@ -344,29 +318,21 @@ export default function NowPlayingSheet({
 
           {/* Skip Next */}
           <button
-            onClick={isGuest ? undefined : onSkipNext}
-            disabled={isGuest}
+            onClick={onSkipNext}
             aria-label="Next track"
-            className={`min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center transition ${
-              isGuest
-                ? 'opacity-30 cursor-not-allowed text-[#8A8A8E]'
-                : 'text-[#F4F4F2] hover:scale-105 active:scale-95 cursor-pointer'
-            }`}
+            className="min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center transition text-[#F4F4F2] hover:scale-105 active:scale-95 cursor-pointer"
           >
             <SkipForward className="w-6 h-6 fill-current" />
           </button>
 
           {/* Repeat */}
           <button
-            onClick={isGuest ? undefined : onToggleRepeat}
-            disabled={isGuest}
+            onClick={onToggleRepeat}
             aria-label="Toggle repeat"
-            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition ${
-              isGuest
-                ? 'opacity-30 cursor-not-allowed'
-                : isRepeat
-                ? 'text-[#1ED760] cursor-pointer active:scale-95'
-                : 'text-[#8A8A8E] hover:text-white cursor-pointer active:scale-95'
+            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
+              isRepeat
+                ? 'text-[#1ED760]'
+                : 'text-[#8A8A8E] hover:text-white'
             }`}
           >
             <Repeat className="w-5 h-5" />

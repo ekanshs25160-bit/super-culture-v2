@@ -62,24 +62,6 @@ CREATE TABLE IF NOT EXISTS play_history (
   played_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Jam Rooms (Persistent / Snapshot state)
-CREATE TABLE IF NOT EXISTS jam_rooms (
-  room_id TEXT PRIMARY KEY,
-  room_code TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  host_id TEXT NOT NULL,
-  is_private INTEGER NOT NULL DEFAULT 0,
-  state TEXT NOT NULL DEFAULT 'waiting',
-  current_track_index INTEGER NOT NULL DEFAULT 0,
-  seek_position REAL NOT NULL DEFAULT 0,
-  queue_json TEXT NOT NULL DEFAULT '[]',
-  participants_json TEXT NOT NULL DEFAULT '[]',
-  vote_count INTEGER NOT NULL DEFAULT 0,
-  vote_round_id INTEGER NOT NULL DEFAULT 1,
-  last_active DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 -- User Taste Memories (for Memori AI DJ integration)
 CREATE TABLE IF NOT EXISTS user_memories (
   id TEXT PRIMARY KEY,
@@ -94,7 +76,6 @@ CREATE INDEX IF NOT EXISTS idx_liked_user ON liked_songs(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_user ON playlists(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_tracks ON playlist_tracks(playlist_id, position);
 CREATE INDEX IF NOT EXISTS idx_history_user ON play_history(user_id, played_at DESC);
-CREATE INDEX IF NOT EXISTS idx_jam_code ON jam_rooms(room_code);
 CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_id);
 `;
 
@@ -108,8 +89,6 @@ CREATE INDEX IF NOT EXISTS idx_liked_user_video ON liked_songs(user_id, video_id
 CREATE INDEX IF NOT EXISTS idx_playlist_tracks_video ON playlist_tracks(video_id);
 CREATE INDEX IF NOT EXISTS idx_history_video ON play_history(video_id);
 CREATE INDEX IF NOT EXISTS idx_history_user_video ON play_history(user_id, video_id);
-CREATE INDEX IF NOT EXISTS idx_jam_host ON jam_rooms(host_id);
-CREATE INDEX IF NOT EXISTS idx_jam_active ON jam_rooms(is_private, state);
 CREATE INDEX IF NOT EXISTS idx_memories_user_category ON user_memories(user_id, category);
 `;
 

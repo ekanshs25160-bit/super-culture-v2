@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction } from 'express';
-import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +10,6 @@ import { env } from './config/env.js';
 import { getCorsOptions } from './config/cors.js';
 import { getDatabase, closeDatabase } from './config/db.js';
 import { setupDatabase } from './db/index.js';
-import { socketService } from './services/socketService.js';
 import { apiRateLimiter } from './middleware/rateLimiters.js';
 import { requestDurationLogger } from './middleware/requestDuration.js';
 import { getYtClient } from './services/ytService.js';
@@ -22,7 +20,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const server = http.createServer(app);
 const PORT = Number(process.env.PORT) || 5001;
 
 // Trust reverse proxy (Render / Cloudflare / Vercel) for accurate client IP rate limiting
@@ -42,7 +39,7 @@ app.use(
         frameSrc: ["'self'", 'https://www.youtube.com', 'https://www.youtube-nocookie.com'],
         imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
         mediaSrc: ["'self'", 'https:', 'blob:', 'data:'],
-        connectSrc: ["'self'", 'https:', 'wss:', 'ws:'],
+        connectSrc: ["'self'", 'https:'],
         styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
         fontSrc: ["'self'", 'https:', 'data:'],
       },
@@ -114,7 +111,7 @@ app.use(express.static(frontendPath));
 
 // React Router SPA Catch-All (serves index.html for all non-API GET requests)
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
+  if (req.path.startsWith('/api')) {
     return next();
   }
   const indexPath = path.join(frontendPath, 'index.html');
@@ -158,16 +155,14 @@ getYtClient().catch((ytErr: any) => {
   console.warn('[Startup] Innertube client background init scheduled:', ytErr.message || ytErr);
 });
 
-// Initialize WebSocket sync for Jam Rooms (bypasses Express middleware)
-socketService.initialize(server);
+// Start HTTP Server
+let server: ReturnType<typeof app.listen> | undefined;
 
-// Start HTTP & WS Server
 if (process.env.NODE_ENV !== 'test') {
-  server.listen(PORT, '0.0.0.0', () => {
+  server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n==================================================`);
     console.log(`  Super Culture v2.0 Backend Server Running`);
     console.log(`  Local URL:   http://${env.host}:${PORT}`);
-    console.log(`  WebSocket:   ws://${env.host}:${PORT}/ws/jam`);
     console.log(`  Environment: ${env.isDev ? 'development' : 'production'}`);
     console.log(`  Passcode:    ${env.appPasscode ? 'ENABLED' : 'DISABLED'}`);
     console.log(`==================================================\n`);
@@ -178,11 +173,16 @@ if (process.env.NODE_ENV !== 'test') {
 function handleShutdown(signal: string) {
   console.log(`\n[Process] Received ${signal}. Gracefully shutting down...`);
   clearInterval(warmShelvesInterval);
-  server.close(() => {
+  if (server) {
+    server.close(() => {
+      closeDatabase();
+      console.log('[Process] Server and database closed. Exiting.');
+      process.exit(0);
+    });
+  } else {
     closeDatabase();
-    console.log('[Process] Server and database closed. Exiting.');
     process.exit(0);
-  });
+  }
 }
 
 process.on('SIGINT', () => handleShutdown('SIGINT'));

@@ -24,7 +24,6 @@
     "helmet": "^8.3.0",
     "lru-cache": "^11.0.2",
     "uuid": "^11.1.0",
-    "ws": "^8.18.0",
     "youtubei.js": "^18.3.0",
     "zod": "^4.6.7"
   },
@@ -37,7 +36,6 @@
     "@types/node": "^22.13.0",
     "@types/supertest": "^7.2.1",
     "@types/uuid": "^10.0.0",
-    "@types/ws": "^8.5.14",
     "supertest": "^7.3.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"

@@ -200,38 +200,3 @@ export const FRIEND_ACTIVITIES = [
   },
 ];
 
-export const JAM_ROOMS = [
-  {
-    id: 'jam-tokyo',
-    name: 'Tokyo Vinyl Loft',
-    host: 'Kenji',
-    avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=100&q=80',
-    listeners: 18,
-    track: {
-      id: 'jam-burial-untrue',
-      title: 'Untrue (Vinyl Rip)',
-      artist: 'Burial',
-      cover: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=300&q=80',
-      duration: '4:35',
-      seconds: 275,
-      videoId: 'IlEkvbRmfrA',
-    },
-  },
-  {
-    id: 'jam-paris',
-    name: 'Paris Runway Synth',
-    host: 'Clara',
-    avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=100&q=80',
-    listeners: 9,
-    track: {
-      id: 'jam-gesaffelstein-opr',
-      title: 'Gesaffelstein — Opr',
-      artist: 'Gesaffelstein',
-      cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=300&q=80',
-      duration: '3:58',
-      seconds: 238,
-      videoId: 'MV_3Dpw-BRY',
-    },
-  },
-];
-

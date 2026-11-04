@@ -14,7 +14,7 @@ export default defineConfig({
       manifest: {
         name: 'Super Culture',
         short_name: 'Super Culture',
-        description: 'Editorial streaming music application with high-fidelity audio discovery and synchronous Jam rooms',
+        description: 'Editorial streaming music application with high-fidelity audio discovery and local playback',
         display: 'standalone',
         orientation: 'any',
         theme_color: '#0B0B0C',
@@ -106,14 +106,6 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:5001',
         changeOrigin: true,
-      },
-      '/socket.io': {
-        target: 'http://127.0.0.1:5001',
-        ws: true,
-      },
-      '/ws': {
-        target: 'ws://127.0.0.1:5001',
-        ws: true,
       },
     },
   },

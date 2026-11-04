@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import musicRoutes from './musicRoutes.js';
 import aiRoutes from './aiRoutes.js';
-import jamRoutes from './jamRoutes.js';
 import userRoutes from './userRoutes.js';
 import authRoutes from './authRoutes.js';
 import { musicController } from '../controllers/musicController.js';
@@ -53,7 +52,6 @@ apiRouter.use(passcodeGate);
 apiRouter.use('/music', musicRoutes);
 apiRouter.use('/yt', musicRoutes);
 apiRouter.use('/ai', aiRoutes);
-apiRouter.use('/jam', jamRoutes);
 apiRouter.use('/library', userRoutes);
 apiRouter.use('/vibe', userRoutes);
 

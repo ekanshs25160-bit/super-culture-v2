@@ -1,8 +1,7 @@
-import { useEffect, useContext, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, Routes, Route, Outlet } from 'react-router-dom';
-import { X, Library, Radio } from 'lucide-react';
-import { AudioProvider, AudioContext } from './context/AudioContext';
-import { useJamStore } from './store/useJamStore';
+import { X, Library, Users } from 'lucide-react';
+import { AudioProvider } from './context/AudioContext';
 import { useUiStore } from './store/useUiStore';
 import { useMediaSession } from './hooks/useMediaSession';
 import { apiClient } from './services/api';
@@ -25,14 +24,11 @@ import DownloadedView from './pages/DownloadedView';
 import LibraryView from './pages/LibraryView';
 import PlaylistView from './pages/PlaylistView';
 import GenreView from './pages/GenreView';
-import JamRoomView from './pages/JamRoomView';
 import SettingsView from './pages/SettingsView';
 import ArtistView from './pages/ArtistView';
 
 function AppLayout() {
   const location = useLocation();
-  const { playTrack, togglePlay, seekTo, isPlaying } = useContext(AudioContext);
-  const registerAudioSyncHandlers = useJamStore((s) => s.registerAudioSyncHandlers);
   const { isMobileMenuOpen, closeMobileMenu } = useUiStore();
   const [mobileTab, setMobileTab] = useState('nav');
 
@@ -48,60 +44,6 @@ function AppLayout() {
   useEffect(() => {
     apiClient.health.ping();
   }, []);
-
-  // Synchronize remote Host commands across WebSocket
-  useEffect(() => {
-    registerAudioSyncHandlers({
-      onRemotePlay: (time) => {
-        if (typeof time === 'number') seekTo(time);
-        if (!isPlaying) togglePlay();
-      },
-      onRemotePause: (time) => {
-        if (typeof time === 'number') seekTo(time);
-        if (isPlaying) togglePlay();
-      },
-      onRemoteSeek: (pos) => {
-        if (typeof pos === 'number') seekTo(pos);
-      },
-      onRemoteTrackChange: (track, queue) => {
-        if (track) playTrack(track, queue);
-      },
-      onRoomSnapshot: ({ currentTrack, currentTime, isPlaying: remoteIsPlaying, queue }) => {
-        const seekSeconds = typeof currentTime === 'number'
-          ? (currentTime > 1000 ? currentTime / 1000 : currentTime)
-          : 0;
-        if (currentTrack) {
-          playTrack(currentTrack, queue);
-          if (seekSeconds > 0) {
-            setTimeout(() => {
-              seekTo(seekSeconds);
-            }, 300);
-          }
-          if (remoteIsPlaying && !isPlaying) {
-            togglePlay();
-          } else if (!remoteIsPlaying && isPlaying) {
-            togglePlay();
-          }
-        }
-      },
-      onGuestSync: ({ currentTrack, currentTime, isPlaying: remoteIsPlaying }) => {
-        const seekSeconds = typeof currentTime === 'number'
-          ? (currentTime > 1000 ? currentTime / 1000 : currentTime)
-          : 0;
-        if (currentTrack && currentTrack.videoId) {
-          playTrack(currentTrack);
-        }
-        if (typeof seekSeconds === 'number') {
-          seekTo(seekSeconds);
-        }
-        if (remoteIsPlaying && !isPlaying) {
-          togglePlay();
-        } else if (!remoteIsPlaying && isPlaying) {
-          togglePlay();
-        }
-      },
-    });
-  }, [isPlaying, togglePlay, seekTo, playTrack, registerAudioSyncHandlers]);
 
   return (
     <div
@@ -146,7 +88,7 @@ function AppLayout() {
           <div className="relative w-[85vw] max-w-[340px] h-full bg-[#0B0B0C]/95 border-r border-white/10 p-4 overflow-hidden flex flex-col gap-3 shadow-2xl z-10 animate-in slide-in-from-left duration-300">
             {/* Drawer Header with Close Button */}
             <div className="flex items-center justify-between pb-2 border-b border-white/10 shrink-0">
-              <span className="meta-label text-[10px] text-[#1ED760]">NAVIGATION & SOCIAL</span>
+              <span className="meta-label text-[10px] text-[#1ED760]">NAVIGATION & ACTIVITY</span>
               <button
                 onClick={closeMobileMenu}
                 aria-label="Close navigation menu"
@@ -156,7 +98,7 @@ function AppLayout() {
               </button>
             </div>
 
-            {/* Tab Switcher: "Library & Nav" | "Jam & Social" */}
+            {/* Tab Switcher: "Library & Nav" | "Activity" */}
             <div className="sc-pill p-1 flex items-center shrink-0 min-h-[44px]">
               <button
                 onClick={() => setMobileTab('nav')}
@@ -177,8 +119,8 @@ function AppLayout() {
                     : 'text-[#8A8A8E] hover:text-[#F4F4F2]'
                 }`}
               >
-                <Radio className="w-4 h-4" />
-                <span>Jam & Social</span>
+                <Users className="w-4 h-4" />
+                <span>Activity</span>
               </button>
             </div>
 
@@ -218,7 +160,6 @@ export default function App() {
           <Route path="/library" element={<LibraryView />} />
           <Route path="/library/:playlistId" element={<PlaylistView />} />
           <Route path="/genre/:genreId" element={<GenreView />} />
-          <Route path="/jam/:roomId" element={<JamRoomView />} />
           <Route path="/settings" element={<SettingsView />} />
         </Route>
       </Routes>
