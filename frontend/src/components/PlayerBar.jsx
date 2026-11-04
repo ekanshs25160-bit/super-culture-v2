@@ -317,7 +317,7 @@ export default function PlayerBar() {
                     className={`min-w-[40px] min-h-[40px] rounded-full flex items-center justify-center transition shrink-0 cursor-pointer ${
                       isLiked
                         ? 'bg-[#1ED760]/15 border border-[#1ED760]/40 text-[#1ED760] shadow-[0_0_12px_rgba(30,215,96,0.3)]'
-                        : 'bg-black/85 hover:bg-black/95 border border-white/14 text-[#8A8A8E] hover:text-white'
+                        : 'bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 text-[#F4F4F2] hover:text-white'
                     }`}
                   >
                     <Heart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isLiked ? 'fill-current' : ''}`} aria-hidden="true" />
@@ -329,14 +329,14 @@ export default function PlayerBar() {
                       openAddToPlaylist(currentTrack);
                     }}
                     aria-label="Add track to playlist"
-                    className="flex min-w-[40px] min-h-[40px] rounded-full bg-black/85 hover:bg-black/95 border border-white/14 hover:border-white/28 items-center justify-center text-[#8A8A8E] hover:text-white transition shrink-0 cursor-pointer"
+                    className="flex min-w-[40px] min-h-[40px] rounded-full bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 items-center justify-center text-[#F4F4F2] hover:text-white transition shrink-0 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
               ) : (
                 <div id="player-left-empty" className="flex items-center gap-2.5 sm:gap-3 min-w-0 w-full">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-black/80 border border-dashed border-white/15 flex items-center justify-center text-[#8A8A8E] shrink-0 font-mono text-[9px] sm:text-[10px]">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white/10 border border-dashed border-white/15 flex items-center justify-center text-[#8A8A8E] shrink-0 font-mono text-[9px] sm:text-[10px]">
                     OFF
                   </div>
                   <div className="min-w-0 flex-1">

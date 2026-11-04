@@ -26,6 +26,10 @@ export class AudioElementPlayer {
     this.currentBlobUrl = null;
     this.hasRetried = false;
     this.volume = 0.74;
+    this.urlCache = new Map(); // videoId -> { url, timestamp }
+    this.loadPromise = null;
+    this.loadToken = 0;
+    this.errorReportedFor = null;
 
     this.initAudioElement();
   }
@@ -123,10 +127,45 @@ export class AudioElementPlayer {
     }
   }
 
+  reportError(code, err, videoId = this.currentVideoId) {
+    const targetId = videoId || this.currentVideoId || 'unknown';
+    if (this.errorReportedFor === targetId) {
+      return;
+    }
+    this.errorReportedFor = targetId;
+    this.state = PlayerState.UNSTARTED;
+    this.emit('onError', code, err);
+  }
+
+  /**
+   * Pre-fetches and caches signed stream URL for instant synchronous playback without network wait
+   */
+  async prepareTrack(videoId) {
+    if (!videoId) return null;
+
+    const cached = this.urlCache.get(videoId);
+    if (cached && Date.now() - cached.timestamp < 100 * 60 * 1000) {
+      return cached.url;
+    }
+
+    try {
+      const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
+      const resolved = resolveAudioUrl(url);
+      this.urlCache.set(videoId, { url: resolved, timestamp: Date.now() });
+      return resolved;
+    } catch (err) {
+      console.warn(`[AudioElementPlayer] prepareTrack failed for ${videoId}:`, err);
+      return null;
+    }
+  }
+
   /**
    * Loads and plays audio for a YouTube videoId using the secure backend stream URL or offline Cache API
    */
-  async loadVideoById({ videoId, startSeconds = 0 }) {
+  async loadVideoById({ videoId, startSeconds = 0 } = {}) {
+    const token = ++this.loadToken;
+    this.errorReportedFor = null;
+
     if (!videoId) return;
 
     this.currentVideoId = videoId;
@@ -147,44 +186,83 @@ export class AudioElementPlayer {
       this.currentBlobUrl = null;
     }
 
-    // 1. Check offline Cache API for saved audio blob
-    let offlineBlobUrl = null;
-    if (typeof caches !== 'undefined') {
+    const loadTask = (async () => {
       try {
-        const cache = await caches.open('sc-offline-audio');
-        const match = await cache.match(`/offline-audio/${videoId}`);
-        if (match) {
-          const blob = await match.blob();
-          if (blob && blob.size > 0) {
-            offlineBlobUrl = URL.createObjectURL(blob);
-            this.currentBlobUrl = offlineBlobUrl;
+        // 1. Check offline Cache API for saved audio blob
+        let offlineBlobUrl = null;
+        if (typeof caches !== 'undefined') {
+          try {
+            const cache = await caches.open('sc-offline-audio');
+            if (token !== this.loadToken) return;
+            const match = await cache.match(`/offline-audio/${videoId}`);
+            if (token !== this.loadToken) return;
+            if (match) {
+              const blob = await match.blob();
+              if (token !== this.loadToken) return;
+              if (blob && blob.size > 0) {
+                offlineBlobUrl = URL.createObjectURL(blob);
+                this.currentBlobUrl = offlineBlobUrl;
+              }
+            }
+          } catch (cacheErr) {
+            console.warn('[AudioElementPlayer] Offline cache check failed:', cacheErr);
           }
         }
-      } catch (cacheErr) {
-        console.warn('[AudioElementPlayer] Offline cache check failed:', cacheErr);
-      }
-    }
+        if (token !== this.loadToken) return;
 
-    try {
-      let targetSrc = offlineBlobUrl;
-      if (!targetSrc) {
-        const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
-        targetSrc = resolveAudioUrl(url);
-      }
+        let targetSrc = offlineBlobUrl;
 
-      this.currentSrc = targetSrc;
-
-      if (this.audio) {
-        this.audio.src = targetSrc;
-        if (startSeconds > 0) {
-          this.audio.currentTime = startSeconds;
+        // 2. Check in-memory URL cache for instant screen-off transition
+        if (!targetSrc) {
+          const cached = this.urlCache.get(videoId);
+          if (cached && Date.now() - cached.timestamp < 100 * 60 * 1000) {
+            targetSrc = cached.url;
+          }
         }
-        await this.playVideo();
+
+        // 3. Fallback to network request if not pre-cached
+        if (!targetSrc) {
+          targetSrc = await this.prepareTrack(videoId);
+          if (token !== this.loadToken) return;
+        }
+
+        if (!targetSrc) {
+          throw new Error('Failed to resolve audio stream source');
+        }
+
+        this.currentSrc = targetSrc;
+
+        if (this.audio) {
+          this.audio.src = targetSrc;
+          this.audio.currentTime = startSeconds || 0;
+          if (token !== this.loadToken) return;
+          try {
+            await this.audio.play();
+          } catch (playErr) {
+            if (token !== this.loadToken) return;
+            if (playErr.name === 'NotAllowedError') {
+              console.warn('[AudioElementPlayer] Autoplay blocked by user-gesture policy.');
+              this.emit('onAutoplayBlocked');
+            } else {
+              console.warn('[AudioElementPlayer] loadVideoById play error:', playErr);
+              this.reportError(100, playErr, videoId);
+            }
+          }
+          if (token !== this.loadToken) return;
+        }
+      } catch (err) {
+        if (token !== this.loadToken) return;
+        console.error('[AudioElementPlayer] Failed to load stream URL:', err);
+        this.reportError(100, err, videoId);
+      } finally {
+        if (this.loadToken === token) {
+          this.loadPromise = null;
+        }
       }
-    } catch (err) {
-      console.error('[AudioElementPlayer] Failed to load stream URL:', err);
-      this.handleAudioError(err);
-    }
+    })();
+
+    this.loadPromise = loadTask;
+    return loadTask;
   }
 
   async cueVideoById({ videoId, startSeconds = 0 }) {
@@ -224,12 +302,16 @@ export class AudioElementPlayer {
     try {
       let targetSrc = offlineBlobUrl;
       if (!targetSrc) {
-        const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
-        targetSrc = resolveAudioUrl(url);
+        const cached = this.urlCache.get(videoId);
+        if (cached && Date.now() - cached.timestamp < 100 * 60 * 1000) {
+          targetSrc = cached.url;
+        } else {
+          targetSrc = await this.prepareTrack(videoId);
+        }
       }
 
       this.currentSrc = targetSrc;
-      if (this.audio) {
+      if (this.audio && targetSrc) {
         this.audio.src = targetSrc;
         if (startSeconds > 0) {
           this.audio.currentTime = startSeconds;
@@ -244,6 +326,14 @@ export class AudioElementPlayer {
     if (!this.audio) return;
 
     try {
+      if (this.loadPromise) {
+        await this.loadPromise;
+      }
+
+      if (this.audio.error || !this.audio.src) {
+        return;
+      }
+
       await this.audio.play();
     } catch (err) {
       if (err.name === 'NotAllowedError') {
@@ -251,9 +341,7 @@ export class AudioElementPlayer {
         this.emit('onAutoplayBlocked');
       } else {
         console.warn('[AudioElementPlayer] playVideo error:', err);
-        if (err.name === 'NotSupportedError') {
-          this.emit('onError', 100, err);
-        }
+        this.reportError(100, err, this.currentVideoId);
       }
     }
   }
@@ -265,6 +353,8 @@ export class AudioElementPlayer {
   }
 
   stopVideo() {
+    this.loadToken++;
+    this.loadPromise = null;
     if (this.audio) {
       this.audio.pause();
       this.audio.currentTime = 0;
@@ -323,9 +413,9 @@ export class AudioElementPlayer {
     }
 
     try {
-      const { url } = await apiClient.music.getStreamUrl(nextTrack.videoId, 'aac');
-      const resolved = resolveAudioUrl(url);
-      if (this.preloadAudio) {
+      // Warm memory urlCache and HTMLAudio preload buffer
+      const resolved = await this.prepareTrack(nextTrack.videoId);
+      if (resolved && this.preloadAudio) {
         this.preloadAudio.src = resolved;
         this.preloadAudio.preload = 'auto';
         this.preloadAudio.load();
@@ -337,27 +427,32 @@ export class AudioElementPlayer {
   }
 
   /**
-   * Recover from stream stalls or token expiry by re-requesting stream URL once
+   * Recover from stream stalls or token expiry (HTTP 410) by re-requesting stream URL once
    */
   async handleStreamStall() {
     if (this.hasRetried || !this.currentVideoId) return;
     this.hasRetried = true;
 
     const resumeTime = this.getCurrentTime();
-    console.log(`[AudioElementPlayer] Stream stalled. Refreshing signed URL for ${this.currentVideoId} at ${resumeTime}s...`);
+    console.log(`[AudioElementPlayer] Stream stalled or token expired. Refreshing signed URL for ${this.currentVideoId} at ${resumeTime}s...`);
+
+    // Invalidate cached URL so fresh HMAC token is fetched
+    this.urlCache.delete(this.currentVideoId);
 
     try {
-      const { url } = await apiClient.music.getStreamUrl(this.currentVideoId, 'aac');
-      const resolved = resolveAudioUrl(url);
-      this.currentSrc = resolved;
+      const freshUrl = await this.prepareTrack(this.currentVideoId);
+      if (!freshUrl) {
+        throw new Error('Could not refresh stream URL');
+      }
+      this.currentSrc = freshUrl;
       if (this.audio) {
-        this.audio.src = resolved;
+        this.audio.src = freshUrl;
         this.audio.currentTime = resumeTime;
         await this.playVideo();
       }
     } catch (err) {
       console.warn('[AudioElementPlayer] Re-request on stall failed:', err);
-      this.emit('onError', 101, err);
+      this.reportError(101, err, this.currentVideoId);
     }
   }
 
@@ -372,11 +467,12 @@ export class AudioElementPlayer {
       return;
     }
 
-    this.state = PlayerState.UNSTARTED;
-    this.emit('onError', 100, e);
+    this.reportError(100, e, this.currentVideoId);
   }
 
   destroy() {
+    this.loadToken++;
+    this.loadPromise = null;
     if (this.currentBlobUrl) {
       try {
         URL.revokeObjectURL(this.currentBlobUrl);

@@ -14,7 +14,12 @@ export const useUiStore = create((set) => ({
   // Mobile / Background Engine Preferences: 'Auto' | 'Audio stream' | 'YouTube player'
   playbackEngine: (typeof localStorage !== 'undefined' && localStorage.getItem(ENGINE_STORAGE_KEY)) || 'Auto',
   temporaryEngineOverride: null,
+  activeEngine: 'audio',
+  lastFallbackReason: null,
   isAutoplayBlocked: false,
+
+  setActiveEngine: (engine) => set({ activeEngine: engine }),
+  setLastFallbackReason: (reason) => set({ lastFallbackReason: reason }),
 
   setPlaybackEngine: (engine) => {
     if (typeof localStorage !== 'undefined') {

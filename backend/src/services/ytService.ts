@@ -1,4 +1,5 @@
-import { Innertube, UniversalCache } from 'youtubei.js';
+import './ytEval.js';
+import { Innertube, UniversalCache, ClientType } from 'youtubei.js';
 import { LRUCache } from 'lru-cache';
 import { TrackMeta, StreamEntry, ArtistMeta, SearchResultPayload } from '../types/index.js';
 
@@ -21,6 +22,7 @@ export const getYtClient = async (retries = 3): Promise<Innertube> => {
         const client = await Innertube.create({
           cache: new UniversalCache(false),
           generate_session_locally: true,
+          client_type: ClientType.IOS, // <-- Force IOS globally here
         });
         ytInstance = client;
         console.log('[ytService] Innertube client initialized.');
@@ -244,7 +246,7 @@ export const searchMusicCatalog = async (query: string, limit = 40): Promise<Sea
 };
 
 export class YouTubeService {
-  private streamCache: LRUCache<string, StreamEntry>;
+  public streamCache: LRUCache<string, StreamEntry>;
 
   constructor() {
     this.streamCache = new LRUCache<string, StreamEntry>({
@@ -372,9 +374,17 @@ export class YouTubeService {
     const client = await this.getClient();
     let info: any;
     try {
-      info = await client.music.getInfo(videoId);
+      info = await client.getBasicInfo(videoId, { client: 'VISIONOS' });
     } catch {
-      info = await client.getInfo(videoId);
+      try {
+        info = await client.getBasicInfo(videoId, { client: 'IOS' });
+      } catch {
+        try {
+          info = await client.music.getInfo(videoId);
+        } catch {
+          info = await client.getInfo(videoId);
+        }
+      }
     }
 
     let format: any;
@@ -416,7 +426,7 @@ export class YouTubeService {
     let streamUrl = format.url;
     if (!streamUrl && typeof format.decipher === 'function') {
       try {
-        streamUrl = format.decipher(client.session.player);
+        streamUrl = await format.decipher(client.session.player);
       } catch (decErr: any) {
         console.warn(`[ytService] format.decipher failed for ${videoId}:`, decErr.message || decErr);
       }

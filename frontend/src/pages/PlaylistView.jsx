@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Play, Shuffle, Heart } from 'lucide-react';
-import { PageHeader, TrackRow, CoverStack, EmptyState } from '../components/shared';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Play, Shuffle, Heart, Trash2 } from 'lucide-react';
+import { PageHeader, TrackRow, CoverStack, EmptyState, ConfirmDialog } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
 
 export default function PlaylistView() {
   const { playlistId } = useParams();
+  const navigate = useNavigate();
   const { playTrack, toggleShuffle, showToast } = useAudio();
   const {
     likedSongs,
     playlists: storePlaylists,
     removeTrackFromPlaylist,
     updatePlaylistName,
+    deletePlaylist,
   } = useLibraryStore();
 
   const isLikedSongs = playlistId === 'liked-songs';
@@ -20,6 +22,7 @@ export default function PlaylistView() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   let title = 'Playlist';
   let description = 'Personal playlist collection.';
@@ -164,9 +167,39 @@ export default function PlaylistView() {
               <Shuffle className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Shuffle</span>
             </button>
+
+            {!isLikedSongs && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                aria-label={`Delete ${title}`}
+                className="sc-pill px-3.5 py-2 bg-white/10 hover:bg-[#FF5A5F]/20 text-[#8A8A8E] hover:text-[#FF5A5F] border border-white/20 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Delete</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Delete Playlist Confirmation Dialog */}
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Playlist"
+        message={`Are you sure you want to delete "${title}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          setShowDeleteConfirm(false);
+          const ok = await deletePlaylist(playlistId);
+          if (ok) {
+            showToast('Playlist deleted');
+            navigate('/library');
+          } else {
+            showToast('Failed to delete playlist');
+          }
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
 
       {/* Track List */}
       <div className="space-y-2">

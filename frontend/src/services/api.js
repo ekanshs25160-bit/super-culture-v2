@@ -138,6 +138,14 @@ export const apiClient = {
       const res = await api.post('/library/playlists', { name, description });
       return res.data;
     },
+    deletePlaylist: async (id) => {
+      const res = await api.delete(`/library/playlists/${id}`);
+      return res.data;
+    },
+    removeTrackFromPlaylist: async (id, videoId) => {
+      const res = await api.delete(`/library/playlists/${id}/tracks/${videoId}`);
+      return res.data;
+    },
   },
 
   // Mood & Mode (Session) API

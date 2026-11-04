@@ -208,4 +208,92 @@ describe('AudioElementPlayer Unit Tests', () => {
     player.destroy();
     assert.equal(mockDocument.elements.length, 0);
   });
+
+  it('stale request guard: discards older skipped track when rapid skipping occurs', async () => {
+    let track1Resolve;
+    const track1Promise = new Promise((resolve) => {
+      track1Resolve = resolve;
+    });
+
+    apiClient.music.getStreamUrl = async (videoId) => {
+      if (videoId === 'slow-track-1') {
+        await track1Promise;
+        return { url: '/api/yt/stream/slow-track-1?t=1' };
+      }
+      return { url: `/api/yt/stream/${videoId}?t=fast` };
+    };
+
+    // 1. Kick off slow track 1
+    const p1 = player.loadVideoById({ videoId: 'slow-track-1' });
+
+    // 2. Immediately kick off track 2 before track 1 resolves
+    const p2 = player.loadVideoById({ videoId: 'fast-track-2' });
+
+    await p2;
+    assert.equal(player.audio.src, '/api/yt/stream/fast-track-2?t=fast');
+
+    // 3. Now let track 1 finish resolving
+    track1Resolve();
+    await p1;
+
+    // 4. Assert track 1 did NOT overwrite track 2
+    assert.equal(player.audio.src, '/api/yt/stream/fast-track-2?t=fast');
+    assert.equal(player.currentSrc, '/api/yt/stream/fast-track-2?t=fast');
+  });
+
+  it('race condition: calling playVideo synchronously right after loadVideoById awaits loadPromise safely', async () => {
+    let loadFinished = false;
+    apiClient.music.getStreamUrl = async (videoId) => {
+      await new Promise((r) => setTimeout(r, 20));
+      loadFinished = true;
+      return { url: `/api/yt/stream/${videoId}?t=sync-test` };
+    };
+
+    // Start load without awaiting
+    const loadPromise = player.loadVideoById({ videoId: 'sync-race-track' });
+    assert(player.loadPromise !== null);
+
+    // Call playVideo immediately (synchronous race condition simulation)
+    const playPromise = player.playVideo();
+
+    await Promise.all([loadPromise, playPromise]);
+    assert.equal(loadFinished, true);
+    assert.equal(player.audio.src, '/api/yt/stream/sync-race-track?t=sync-test');
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+  });
+
+  it('reportError emits onError at most once per load attempt', () => {
+    let errorCount = 0;
+    player.on('onError', () => {
+      errorCount++;
+    });
+
+    player.currentVideoId = 'error-track-1';
+    player.reportError(100, new Error('First failure'), 'error-track-1');
+    player.reportError(100, new Error('Second failure'), 'error-track-1');
+    player.reportError(100, new Error('Third failure'), 'error-track-1');
+
+    assert.equal(errorCount, 1, 'onError should only fire once per attempt');
+
+    // Resetting for a new load attempt allows 1 more report
+    player.loadToken++;
+    player.errorReportedFor = null;
+    player.reportError(100, new Error('New attempt failure'), 'error-track-1');
+    assert.equal(errorCount, 2, 'onError should fire once for the new attempt');
+  });
+
+  it('safely resumes audio on playVideo after pauseVideo', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=resume-test`,
+    });
+
+    await player.loadVideoById({ videoId: 'resume-track' });
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+
+    player.pauseVideo();
+    assert.equal(player.getPlayerState(), PlayerState.PAUSED);
+
+    await player.playVideo();
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+  });
 });

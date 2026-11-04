@@ -316,5 +316,33 @@ describe('Super Culture v2.0 - Backend Hardening & Speed Suite', () => {
       assert.equal(res.headers['content-length'], '1025');
       assert.equal(res.text, undefined);
     });
+
+    it('returns 502 with STREAM_UNAVAILABLE when resolver fails', async () => {
+      const failingId = 'failing-video-id';
+      const failingToken = createStreamToken(failingId);
+
+      const savedResolve = ytService.resolveAudioStream;
+      ytService.resolveAudioStream = async () => {
+        throw new Error('Failed to extract signature decipher algorithm');
+      };
+
+      try {
+        const res = await request(app).get(`/api/yt/stream/${failingId}?t=${failingToken}`);
+        assert.equal(res.status, 502);
+        assert.deepEqual(res.body, {
+          code: 'STREAM_UNAVAILABLE',
+          message: 'Unable to resolve audio stream for this track',
+        });
+      } finally {
+        ytService.resolveAudioStream = savedResolve;
+      }
+    });
+
+    it('GET /api/yt/selftest returns status 200 with ok: true when stream is accessible', async () => {
+      const res = await request(app).get('/api/yt/selftest');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.ok, true);
+      assert.equal(res.body.status, 206);
+    });
   });
 });

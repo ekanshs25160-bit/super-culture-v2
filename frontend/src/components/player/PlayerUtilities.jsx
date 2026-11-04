@@ -20,7 +20,7 @@ export default function PlayerUtilities({
           if (e.key === 'Enter') onNextClick();
         }}
         aria-label={`Play next track ${nextTrack?.title || 'Up next'}`}
-        className="hidden sm:flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-2xl bg-black/90 hover:bg-black/98 border border-white/14 hover:border-white/28 shadow-[0_4px_16px_rgba(0,0,0,0.85)] cursor-pointer transition max-w-[170px] select-none"
+        className="hidden sm:flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 shadow-[0_4px_16px_rgba(0,0,0,0.85)] cursor-pointer transition max-w-[170px] select-none"
       >
         <CoverImage
           id="next-track-cover"

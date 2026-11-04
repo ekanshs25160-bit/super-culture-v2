@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, FileText, X, Loader2 } from 'lucide-react';
-import { PageHeader, PlaylistCard, Skeleton } from '../components/shared';
+import { PageHeader, PlaylistCard, Skeleton, ConfirmDialog } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { apiClient } from '../services/api';
@@ -16,12 +16,14 @@ export default function LibraryView() {
     loading,
     createPlaylist,
     createPlaylistWithMultipleTracks,
+    deletePlaylist,
   } = useLibraryStore();
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importPlaylistName, setImportPlaylistName] = useState('');
   const [importTracklistText, setImportTracklistText] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [playlistToDelete, setPlaylistToDelete] = useState(null);
 
   const handleCreateNew = async () => {
     const defaultName = `My Playlist #${storePlaylists.length + 1}`;
@@ -252,10 +254,31 @@ export default function LibraryView() {
               isLikedSongs={pl.id === 'liked-songs'}
               onClick={() => navigate(`/library/${pl.id}`)}
               onPlay={() => handlePlayCard(pl)}
+              onDelete={pl.id !== 'liked-songs' ? () => setPlaylistToDelete(pl) : undefined}
             />
           ))}
         </div>
       )}
+
+      {/* Delete Playlist Confirmation Dialog */}
+      <ConfirmDialog
+        open={Boolean(playlistToDelete)}
+        title="Delete Playlist"
+        message={`Are you sure you want to delete "${playlistToDelete?.title || 'this playlist'}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          if (!playlistToDelete) return;
+          const target = playlistToDelete;
+          setPlaylistToDelete(null);
+          const ok = await deletePlaylist(target.id);
+          if (ok) {
+            showToast(`Deleted "${target.title}"`);
+          } else {
+            showToast('Failed to delete playlist');
+          }
+        }}
+        onCancel={() => setPlaylistToDelete(null)}
+      />
     </div>
   );
 }

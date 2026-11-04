@@ -7,3 +7,4 @@ export { default as Skeleton } from './Skeleton';
 export { default as Wordmark } from '../Wordmark';
 export { default as CoverImage } from './CoverImage';
 export { default as AddToPlaylistModal } from './AddToPlaylistModal';
+export { default as ConfirmDialog } from './ConfirmDialog';

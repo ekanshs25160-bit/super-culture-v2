@@ -153,7 +153,7 @@ export default function TopBar() {
         {/* Frosted Pill Search Input Form */}
         <form
           onSubmit={handleSearchSubmit}
-          className="sc-pill flex items-center gap-2 px-3 sm:px-4 h-9 sm:h-10 w-[140px] xs:w-[180px] sm:w-[260px] md:w-[310px] focus-within:border-white/30 focus-within:bg-black/80"
+          className="sc-pill flex items-center gap-2 px-3 sm:px-4 h-9 sm:h-10 w-[140px] xs:w-[180px] sm:w-[260px] md:w-[310px] focus-within:border-white/30 focus-within:bg-white/14"
         >
           <Search className="w-3.5 h-3.5 text-[#8A8A8E] shrink-0" aria-hidden="true" />
           <input

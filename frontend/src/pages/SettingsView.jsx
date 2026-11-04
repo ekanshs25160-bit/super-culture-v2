@@ -29,7 +29,12 @@ const MOOD_OPTIONS = [
 export default function SettingsView() {
   const { privacyMode, setPrivacyMode, showToast } = useContext(AudioContext);
   const { mood, mode, setMood, setMode } = useLibraryStore();
-  const { playbackEngine, setPlaybackEngine } = useUiStore();
+  const {
+    playbackEngine,
+    setPlaybackEngine,
+    activeEngine,
+    lastFallbackReason,
+  } = useUiStore();
   const { canInstall, isIosSafari, isStandalone, promptInstall } = usePwaInstall();
 
   const [selectedQuality, setSelectedQuality] = useState('24bit');
@@ -96,6 +101,22 @@ export default function SettingsView() {
                 </button>
               );
             })}
+          </div>
+
+          {/* Active Engine Diagnostics & Status */}
+          <div className="mt-3 pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-[#8A8A8E]">Active engine:</span>
+              <span className="font-mono text-[#1ED760] font-medium bg-[#1ED760]/10 px-2 py-0.5 rounded-md border border-[#1ED760]/20">
+                {activeEngine === 'audio' ? 'Audio stream (HTMLAudioElement)' : 'YouTube player (IFrame)'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[#8A8A8E]">Last fallback reason:</span>
+              <span className="font-mono text-[#F4F4F2] bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
+                {lastFallbackReason || 'None'}
+              </span>
+            </div>
           </div>
         </section>
 

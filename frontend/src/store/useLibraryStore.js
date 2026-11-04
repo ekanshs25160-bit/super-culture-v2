@@ -210,7 +210,7 @@ export const useLibraryStore = create((set, get) => ({
     return { added: true, playlistName };
   },
 
-  removeTrackFromPlaylist: (playlistId, videoId) => {
+  removeTrackFromPlaylist: async (playlistId, videoId) => {
     if (!playlistId || !videoId) return { removed: false };
     const playlists = get().playlists;
     const target = playlists.find((p) => p.id === playlistId);
@@ -228,7 +228,46 @@ export const useLibraryStore = create((set, get) => ({
 
     persistTracks(playlistId, nextTracks);
     set({ playlists: nextPlaylists });
+
+    if (!playlistId.startsWith('temp-playlist-')) {
+      try {
+        await apiClient.library.removeTrackFromPlaylist(playlistId, videoId);
+      } catch (err) {
+        console.error('[LibraryStore] removeTrackFromPlaylist API error:', err);
+        persistTracks(playlistId, existingTracks);
+        set({ playlists });
+        return { removed: false, playlistName };
+      }
+    }
+
     return { removed: true, playlistName };
+  },
+
+  deletePlaylist: async (id) => {
+    if (!id || id === 'liked-songs') return false;
+
+    const prevPlaylists = [...get().playlists];
+    const nextPlaylists = prevPlaylists.filter((p) => p.id !== id);
+    set({ playlists: nextPlaylists });
+
+    try {
+      localStorage.removeItem(`superculture_playlist_tracks_${id}`);
+    } catch {
+      // ignore
+    }
+
+    if (id.startsWith('temp-playlist-')) {
+      return true;
+    }
+
+    try {
+      await apiClient.library.deletePlaylist(id);
+      return true;
+    } catch (err) {
+      console.error('[LibraryStore] deletePlaylist failed, rolling back:', err);
+      set({ playlists: prevPlaylists, error: 'Failed to delete playlist' });
+      return false;
+    }
   },
 
   updatePlaylistName: (playlistId, newName) =>

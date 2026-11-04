@@ -4,6 +4,7 @@ import aiRoutes from './aiRoutes.js';
 import jamRoutes from './jamRoutes.js';
 import userRoutes from './userRoutes.js';
 import authRoutes from './authRoutes.js';
+import { musicController } from '../controllers/musicController.js';
 import { getDatabase } from '../config/db.js';
 import { passcodeGate } from '../middleware/auth.js';
 import { authRateLimiter } from '../middleware/rateLimiters.js';
@@ -21,6 +22,10 @@ apiRouter.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// YouTube audio stream self-test probe on /api/yt/selftest (bypasses passcode gate)
+apiRouter.get('/yt/selftest', (req, res) => musicController.selfTest(req, res));
+apiRouter.get('/music/selftest', (req, res) => musicController.selfTest(req, res));
 
 // Readiness probe on /api/ready (bypasses passcode gate, checks DB)
 apiRouter.get('/ready', (_req, res) => {

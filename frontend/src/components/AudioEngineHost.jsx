@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, memo, useContext } from 'react';
 import { AudioContext } from '../context/AudioContext';
 import { useUiStore } from '../store/useUiStore';
 import { AudioElementPlayer } from '../engine/AudioElementPlayer';
-import { resolveEffectiveEngine } from '../engine/PlayerConstants';
+import { resolveEffectiveEngine, isMobileDevice } from '../engine/PlayerConstants';
 import { createPlaybackEventHandler } from '../engine/playbackEventHandler';
 import YouTubePlayer from './YouTubePlayer';
 
@@ -26,6 +26,8 @@ const AudioEngineHost = memo(function AudioEngineHost() {
     temporaryEngineOverride,
     setTemporaryEngineOverride,
     setAutoplayBlocked,
+    setActiveEngine,
+    setLastFallbackReason,
   } = useUiStore();
 
   const [, setViewportWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
@@ -39,6 +41,12 @@ const AudioEngineHost = memo(function AudioEngineHost() {
   const effectiveEngine = temporaryEngineOverride || resolveEffectiveEngine(playbackEngine);
   const audioPlayerRef = useRef(null);
   const handlerRef = useRef(null);
+  const mobileRetriedRef = useRef(false);
+
+  // Sync active engine to UI store for diagnostics display in Settings
+  useEffect(() => {
+    setActiveEngine(effectiveEngine);
+  }, [effectiveEngine, setActiveEngine]);
 
   // Setup shared event handler
   useEffect(() => {
@@ -48,14 +56,37 @@ const AudioEngineHost = memo(function AudioEngineHost() {
       getSkipTrack: () => skipTrack,
       setIsPlaying,
       showToast,
-      onEngineFallback: () => {
-        setTemporaryEngineOverride('youtube');
+      pauseVideo: () => audioPlayerRef.current?.pauseVideo(),
+      onEngineFallback: (errorCode, detail) => {
+        const isMobile = isMobileDevice();
+        if (isMobile) {
+          // On mobile, never fall back to YouTube iframe (background playback stops in iframe)
+          if (!mobileRetriedRef.current && audioPlayerRef.current && currentTrack?.videoId) {
+            mobileRetriedRef.current = true;
+            console.log('[AudioEngineHost] Mobile audio error: retrying audio stream once...');
+            audioPlayerRef.current.handleStreamStall();
+            return;
+          }
+
+          const reason = `Mobile stream failure (code ${errorCode}${detail ? `: ${detail}` : ''}) • Skipped track`;
+          setLastFallbackReason(reason);
+          showToast?.('Audio playback failed • Skipping to next track');
+          const skip = skipNext || (() => skipTrack(1));
+          skip();
+        } else {
+          // On desktop, fallback to YouTube iframe
+          const reason = `Desktop stream failure (code ${errorCode}${detail ? `: ${detail}` : ''}) • Fallback to YouTube`;
+          setLastFallbackReason(reason);
+          showToast?.('Audio stream failed • Switching to YouTube player');
+          setTemporaryEngineOverride('youtube');
+        }
       },
     });
-  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, setTemporaryEngineOverride]);
+  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, setTemporaryEngineOverride, setLastFallbackReason, currentTrack]);
 
-  // Sync track ID with error count tracking
+  // Sync track ID with error count tracking and reset retry flag
   useEffect(() => {
+    mobileRetriedRef.current = false;
     if (currentTrack?.videoId && handlerRef.current) {
       handlerRef.current.setTrack(currentTrack.videoId);
     }
@@ -82,7 +113,13 @@ const AudioEngineHost = memo(function AudioEngineHost() {
 
       player.on('onError', (code, detail) => {
         if (handlerRef.current) {
-          handlerRef.current.handleError(code, detail);
+          handlerRef.current.handleError(code, detail, player);
+        }
+      });
+
+      player.on('onTimeUpdate', (currentTime) => {
+        if (handlerRef.current) {
+          handlerRef.current.handleTimeUpdate?.(currentTime);
         }
       });
 
@@ -92,6 +129,9 @@ const AudioEngineHost = memo(function AudioEngineHost() {
 
       player.on('onPlaying', () => {
         setAutoplayBlocked(false);
+        if (handlerRef.current) {
+          handlerRef.current.onPlaying?.();
+        }
 
         // Preload next track for near-gapless playback
         const currentIndex = queue.findIndex(
@@ -100,6 +140,12 @@ const AudioEngineHost = memo(function AudioEngineHost() {
         if (currentIndex !== -1 && queue.length > 1) {
           const nextTrack = queue[(currentIndex + 1) % queue.length];
           player.preloadNextTrack(nextTrack);
+        }
+      });
+
+      player.on('onPaused', () => {
+        if (handlerRef.current) {
+          handlerRef.current.onPaused?.();
         }
       });
 

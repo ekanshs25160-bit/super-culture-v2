@@ -3,7 +3,9 @@ import axios from 'axios';
 import { ytService, getArtistDiscography } from '../services/ytService.js';
 import { cacheService, CacheService } from '../services/cacheService.js';
 import { createStreamToken, verifyStreamToken } from '../services/tokenService.js';
-import { TrackMeta } from '../types/index.js';
+import { TrackMeta, StreamEntry } from '../types/index.js';
+
+export const SELFTEST_VIDEO_ID = 'dQw4w9WgXcQ';
 
 export class MusicController {
   /**
@@ -140,19 +142,36 @@ export class MusicController {
       abortController.abort();
     });
 
+    let streamInfo: StreamEntry;
     try {
-      const streamInfo = await ytService.resolveAudioStream(videoId, prefer);
+      streamInfo = await ytService.resolveAudioStream(videoId, prefer);
+    } catch (resolveError: any) {
+      console.error(`[MusicController] Stream resolution failed for ${videoId}:`, resolveError.message || resolveError);
+      res.status(502).json({
+        code: 'STREAM_UNAVAILABLE',
+        message: 'Unable to resolve audio stream for this track',
+      });
+      return;
+    }
+
+    try {
       const range = req.headers.range;
+      const upstreamHeaders: Record<string, string> = {
+        'User-Agent': 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)',
+      };
+      if (range) {
+        upstreamHeaders['Range'] = range;
+      }
 
       const response = await axios.get(streamInfo.url, {
-        headers: range ? { Range: range } : undefined,
-        responseType: req.method === 'HEAD' ? undefined : 'stream',
+        headers: upstreamHeaders,
+        responseType: 'stream',
         signal: abortController.signal,
         validateStatus: (status) => status >= 200 && status < 400,
       });
 
       res.status(response.status);
-      res.setHeader('Content-Type', streamInfo.mimeType || 'audio/mp4');
+      res.setHeader('Content-Type', String(streamInfo.mimeType || response.headers['content-type'] || 'audio/mp4'));
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'private, no-store');
 
@@ -163,18 +182,71 @@ export class MusicController {
         res.setHeader('Content-Length', String(response.headers['content-length']));
       }
 
+      req.on('close', () => {
+        if (response.data && typeof response.data.destroy === 'function') {
+          response.data.destroy();
+        }
+      });
+
       if (req.method === 'HEAD') {
+        if (response.data && typeof response.data.destroy === 'function') {
+          response.data.destroy();
+        }
         res.end();
         return;
       }
 
       response.data.pipe(res);
     } catch (error: any) {
+      if (error.response?.status === 403) {
+        ytService.streamCache.delete(`${videoId}:${prefer}`);
+        ytService.streamCache.delete(`${videoId}:aac`);
+        ytService.streamCache.delete(`${videoId}:best`);
+        ytService.streamCache.delete(videoId);
+      }
+
       if (axios.isCancel(error) || abortController.signal.aborted) {
         return;
       }
-      console.error(`[MusicController] Stream error for ${videoId}:`, error.message);
-      res.status(500).json({ error: 'Failed to stream audio', details: error.message });
+      console.error(`[MusicController] Stream error for ${videoId}:`, error.message || error);
+      if (!res.headersSent) {
+        res.status(502).json({
+          code: 'STREAM_UNAVAILABLE',
+          message: 'Upstream audio stream could not be loaded',
+        });
+      }
+    }
+  }
+
+  /**
+   * Diagnostic self-test endpoint to verify YouTube audio stream resolving and upstream accessibility.
+   * GET /api/yt/selftest
+   */
+  public async selfTest(_req: Request, res: Response): Promise<void> {
+    try {
+      const streamInfo = await ytService.resolveAudioStream(SELFTEST_VIDEO_ID, 'aac');
+      const upstreamRes = await axios.get(streamInfo.url, {
+        headers: {
+          Range: 'bytes=0-1',
+          'User-Agent': 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)',
+        },
+        responseType: 'stream',
+        validateStatus: () => true,
+        timeout: 10000,
+      });
+
+      if (upstreamRes.data && typeof upstreamRes.data.destroy === 'function') {
+        upstreamRes.data.destroy();
+      }
+
+      if (upstreamRes.status === 200 || upstreamRes.status === 206) {
+        res.json({ ok: true, status: upstreamRes.status });
+      } else {
+        res.status(502).json({ ok: false, error: `Upstream HTTP ${upstreamRes.status}` });
+      }
+    } catch (err: any) {
+      console.error('[MusicController] selfTest error:', err.message || err);
+      res.status(502).json({ ok: false, error: err.message || 'Stream self-test failed' });
     }
   }
 

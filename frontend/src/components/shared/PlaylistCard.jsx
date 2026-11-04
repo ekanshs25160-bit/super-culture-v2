@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Heart } from 'lucide-react';
+import { Play, Heart, Trash2 } from 'lucide-react';
 import CoverImage from './CoverImage';
 
 /**
@@ -13,6 +13,7 @@ export default function PlaylistCard({
   tag,
   onClick,
   onPlay,
+  onDelete,
   isLikedSongs = false,
 }) {
   const handlePlayClick = (e) => {
@@ -50,6 +51,18 @@ export default function PlaylistCard({
             className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
             loading="lazy"
           />
+        )}
+        {onDelete && !isLikedSongs && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            aria-label={`Delete playlist ${title}`}
+            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/10 hover:bg-[#FF5A5F] text-[#F4F4F2] hover:text-white border border-white/20 flex items-center justify-center transition opacity-100 md:opacity-0 md:group-hover:opacity-100 z-10 cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
         )}
         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-end justify-end p-2.5">
           <button

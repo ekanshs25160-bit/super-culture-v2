@@ -149,6 +149,84 @@ export class UserController {
   }
 
   /**
+   * Delete playlist and its tracks
+   * DELETE /api/library/playlists/:playlistId
+   */
+  public async deletePlaylist(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req.headers['x-guest-id'] as string) || 'default-user';
+      const { playlistId } = req.params;
+
+      if (!playlistId) {
+        res.status(400).json({ error: 'playlistId parameter is required' });
+        return;
+      }
+
+      const db = getDatabase();
+      const playlist = db.prepare('SELECT id FROM playlists WHERE id = ? AND user_id = ?').get(playlistId, userId) as any;
+
+      if (!playlist) {
+        res.status(404).json({ error: 'Playlist not found' });
+        return;
+      }
+
+      const executeDelete = () => {
+        db.prepare('DELETE FROM playlist_tracks WHERE playlist_id = ?').run(playlistId);
+        db.prepare('DELETE FROM playlists WHERE id = ? AND user_id = ?').run(playlistId, userId);
+      };
+
+      if (typeof (db as any).transaction === 'function') {
+        (db as any).transaction(executeDelete)();
+      } else {
+        db.exec('BEGIN');
+        try {
+          executeDelete();
+          db.exec('COMMIT');
+        } catch (txErr) {
+          db.exec('ROLLBACK');
+          throw txErr;
+        }
+      }
+
+      res.status(200).json({ ok: true });
+    } catch (error: any) {
+      console.error('[UserController] deletePlaylist error:', error);
+      res.status(500).json({ error: 'Failed to delete playlist' });
+    }
+  }
+
+  /**
+   * Remove a track from playlist
+   * DELETE /api/library/playlists/:playlistId/tracks/:videoId
+   */
+  public async removeTrackFromPlaylist(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req.headers['x-guest-id'] as string) || 'default-user';
+      const { playlistId, videoId } = req.params;
+
+      if (!playlistId || !videoId) {
+        res.status(400).json({ error: 'playlistId and videoId are required' });
+        return;
+      }
+
+      const db = getDatabase();
+      const playlist = db.prepare('SELECT id FROM playlists WHERE id = ? AND user_id = ?').get(playlistId, userId) as any;
+
+      if (!playlist) {
+        res.status(404).json({ error: 'Playlist not found' });
+        return;
+      }
+
+      db.prepare('DELETE FROM playlist_tracks WHERE playlist_id = ? AND video_id = ?').run(playlistId, videoId);
+
+      res.status(200).json({ ok: true });
+    } catch (error: any) {
+      console.error('[UserController] removeTrackFromPlaylist error:', error);
+      res.status(500).json({ error: 'Failed to remove track from playlist' });
+    }
+  }
+
+  /**
    * Update mood state (Top Bar & Left Nav synchronization)
    * POST /api/vibe/mood
    */

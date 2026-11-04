@@ -7,12 +7,12 @@ export interface TokenVerificationResult {
 }
 
 /**
- * Creates an HMAC token for a given videoId with a 5-minute expiry by default.
+ * Creates an HMAC token for a given videoId with a 2-hour expiry by default.
  * Format: `${expiryTimestampMs}.${hexHmac}`
  */
 export const createStreamToken = (
   videoId: string,
-  expiryDurationMs = 5 * 60 * 1000
+  expiryDurationMs = 2 * 60 * 60 * 1000
 ): string => {
   const expiry = Date.now() + expiryDurationMs;
   const hmac = crypto

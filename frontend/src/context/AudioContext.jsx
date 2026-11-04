@@ -113,7 +113,7 @@ export const AudioProvider = ({ children }) => {
     }
   }, [isPlaying]);
 
-  // Persist state to localStorage
+  // Persist state to localStorage on track, queue, or control setting changes
   useEffect(() => {
     playbackPersistence.save({
       currentTrack,
@@ -123,7 +123,49 @@ export const AudioProvider = ({ children }) => {
       isShuffle,
       isRepeat,
     });
-  }, [currentTrack, queue, volume, currentTime, isShuffle, isRepeat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack, queue, volume, isShuffle, isRepeat]); // Note: currentTime excluded from direct dependency to prevent 500ms disk thrashing
+
+  // Periodic 5-second state persistence while playing + pagehide / visibilitychange listeners (for mobile background preservation)
+  useEffect(() => {
+    const saveCurrentPlaybackState = () => {
+      const cur = stateRef.current;
+      playbackPersistence.save({
+        currentTrack: cur.currentTrack,
+        queue: cur.queue,
+        volume: cur.volume,
+        currentTime: cur.currentTime,
+        isShuffle: cur.isShuffle,
+        isRepeat: cur.isRepeat,
+      });
+    };
+
+    const interval = setInterval(() => {
+      if (stateRef.current.isPlaying) {
+        saveCurrentPlaybackState();
+      }
+    }, 5000);
+
+    const handlePageHide = () => {
+      saveCurrentPlaybackState();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveCurrentPlaybackState();
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      saveCurrentPlaybackState();
+    };
+  }, []);
 
   // Toast Trigger
   const showToast = useCallback((msg) => {
@@ -145,7 +187,7 @@ export const AudioProvider = ({ children }) => {
   }, []);
 
   // Play a track and dynamically replace or update queue
-  const playSelectedTrack = useCallback((track, customQueue = null) => {
+  const playSelectedTrack = useCallback(async (track, customQueue = null) => {
     if (!track) return;
 
     if (isEmptyPlayer) {
@@ -181,11 +223,10 @@ export const AudioProvider = ({ children }) => {
 
     if (playerRef.current && track.videoId) {
       try {
-        playerRef.current.loadVideoById({
+        await playerRef.current.loadVideoById({
           videoId: track.videoId,
           startSeconds: 0,
         });
-        playerRef.current.playVideo();
       } catch (err) {
         console.warn('[AudioContext] Could not load video:', err);
       }
