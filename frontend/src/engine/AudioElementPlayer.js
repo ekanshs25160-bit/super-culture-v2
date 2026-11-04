@@ -1,5 +1,13 @@
 import { PlayerState } from './PlayerConstants.js';
-import { apiClient } from '../services/api.js';
+import { apiClient, API_BASE } from '../services/api.js';
+
+export const resolveAudioUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  return `${API_BASE}${url}`;
+};
 
 /**
  * AudioElementPlayer
@@ -15,6 +23,7 @@ export class AudioElementPlayer {
     this.listeners = new Map();
     this.currentVideoId = null;
     this.currentSrc = null;
+    this.currentBlobUrl = null;
     this.hasRetried = false;
     this.volume = 0.74;
 
@@ -115,7 +124,7 @@ export class AudioElementPlayer {
   }
 
   /**
-   * Loads and plays audio for a YouTube videoId using the secure backend stream URL
+   * Loads and plays audio for a YouTube videoId using the secure backend stream URL or offline Cache API
    */
   async loadVideoById({ videoId, startSeconds = 0 }) {
     if (!videoId) return;
@@ -128,12 +137,45 @@ export class AudioElementPlayer {
 
     this.initAudioElement();
 
+    // Revoke previous blob URL if created to release memory
+    if (this.currentBlobUrl) {
+      try {
+        URL.revokeObjectURL(this.currentBlobUrl);
+      } catch (_revokeErr) {
+        void _revokeErr;
+      }
+      this.currentBlobUrl = null;
+    }
+
+    // 1. Check offline Cache API for saved audio blob
+    let offlineBlobUrl = null;
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open('sc-offline-audio');
+        const match = await cache.match(`/offline-audio/${videoId}`);
+        if (match) {
+          const blob = await match.blob();
+          if (blob && blob.size > 0) {
+            offlineBlobUrl = URL.createObjectURL(blob);
+            this.currentBlobUrl = offlineBlobUrl;
+          }
+        }
+      } catch (cacheErr) {
+        console.warn('[AudioElementPlayer] Offline cache check failed:', cacheErr);
+      }
+    }
+
     try {
-      const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
-      this.currentSrc = url;
+      let targetSrc = offlineBlobUrl;
+      if (!targetSrc) {
+        const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
+        targetSrc = resolveAudioUrl(url);
+      }
+
+      this.currentSrc = targetSrc;
 
       if (this.audio) {
-        this.audio.src = url;
+        this.audio.src = targetSrc;
         if (startSeconds > 0) {
           this.audio.currentTime = startSeconds;
         }
@@ -145,27 +187,57 @@ export class AudioElementPlayer {
     }
   }
 
-  cueVideoById({ videoId, startSeconds = 0 }) {
+  async cueVideoById({ videoId, startSeconds = 0 }) {
     this.currentVideoId = videoId;
     this.hasRetried = false;
     this.state = PlayerState.CUED;
     this.emit('onStateChange', PlayerState.CUED);
 
     this.initAudioElement();
-    apiClient.music
-      .getStreamUrl(videoId, 'aac')
-      .then(({ url }) => {
-        this.currentSrc = url;
-        if (this.audio) {
-          this.audio.src = url;
-          if (startSeconds > 0) {
-            this.audio.currentTime = startSeconds;
+
+    if (this.currentBlobUrl) {
+      try {
+        URL.revokeObjectURL(this.currentBlobUrl);
+      } catch (_revokeErr) {
+        void _revokeErr;
+      }
+      this.currentBlobUrl = null;
+    }
+
+    let offlineBlobUrl = null;
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open('sc-offline-audio');
+        const match = await cache.match(`/offline-audio/${videoId}`);
+        if (match) {
+          const blob = await match.blob();
+          if (blob && blob.size > 0) {
+            offlineBlobUrl = URL.createObjectURL(blob);
+            this.currentBlobUrl = offlineBlobUrl;
           }
         }
-      })
-      .catch((err) => {
-        console.warn('[AudioElementPlayer] Failed to cue stream URL:', err);
-      });
+      } catch (_cacheErr) {
+        void _cacheErr;
+      }
+    }
+
+    try {
+      let targetSrc = offlineBlobUrl;
+      if (!targetSrc) {
+        const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
+        targetSrc = resolveAudioUrl(url);
+      }
+
+      this.currentSrc = targetSrc;
+      if (this.audio) {
+        this.audio.src = targetSrc;
+        if (startSeconds > 0) {
+          this.audio.currentTime = startSeconds;
+        }
+      }
+    } catch (err) {
+      console.warn('[AudioElementPlayer] Failed to cue stream URL:', err);
+    }
   }
 
   async playVideo() {
@@ -179,6 +251,9 @@ export class AudioElementPlayer {
         this.emit('onAutoplayBlocked');
       } else {
         console.warn('[AudioElementPlayer] playVideo error:', err);
+        if (err.name === 'NotSupportedError') {
+          this.emit('onError', 100, err);
+        }
       }
     }
   }
@@ -249,8 +324,9 @@ export class AudioElementPlayer {
 
     try {
       const { url } = await apiClient.music.getStreamUrl(nextTrack.videoId, 'aac');
+      const resolved = resolveAudioUrl(url);
       if (this.preloadAudio) {
-        this.preloadAudio.src = url;
+        this.preloadAudio.src = resolved;
         this.preloadAudio.preload = 'auto';
         this.preloadAudio.load();
       }
@@ -272,9 +348,10 @@ export class AudioElementPlayer {
 
     try {
       const { url } = await apiClient.music.getStreamUrl(this.currentVideoId, 'aac');
-      this.currentSrc = url;
+      const resolved = resolveAudioUrl(url);
+      this.currentSrc = resolved;
       if (this.audio) {
-        this.audio.src = url;
+        this.audio.src = resolved;
         this.audio.currentTime = resumeTime;
         await this.playVideo();
       }
@@ -285,7 +362,12 @@ export class AudioElementPlayer {
   }
 
   handleAudioError(e) {
-    if (!this.hasRetried && this.currentVideoId) {
+    const isUnsupported =
+      this.audio?.error?.code === 4 ||
+      e?.name === 'NotSupportedError' ||
+      e?.message?.includes('no supported source');
+
+    if (!isUnsupported && !this.hasRetried && this.currentVideoId) {
       this.handleStreamStall();
       return;
     }
@@ -295,6 +377,15 @@ export class AudioElementPlayer {
   }
 
   destroy() {
+    if (this.currentBlobUrl) {
+      try {
+        URL.revokeObjectURL(this.currentBlobUrl);
+      } catch (_err) {
+        void _err;
+      }
+      this.currentBlobUrl = null;
+    }
+
     if (this.audio) {
       this.audio.pause();
       this.audio.src = '';

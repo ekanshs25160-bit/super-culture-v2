@@ -62,3 +62,21 @@ export function saveFollowedArtists(artists) {
   }
 }
 
+export function loadDownloadedTracks() {
+  try {
+    const raw = localStorage.getItem('sc_downloaded_tracks');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDownloadedTracks(tracks) {
+  try {
+    localStorage.setItem('sc_downloaded_tracks', JSON.stringify(tracks));
+  } catch (e) {
+    console.warn('[LibraryStore] Failed to save downloaded tracks:', e);
+  }
+}
+
+

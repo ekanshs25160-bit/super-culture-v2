@@ -407,7 +407,84 @@ export class MusicController {
       res.status(500).json({ error: 'Failed to load home shelves' });
     }
   }
+
+  /**
+   * Search music catalog with LRU cache & SWR deduplication
+   */
+  public async searchMusicCatalogCached(query: string, limit = 1): Promise<TrackMeta | null> {
+    const normalizedQ = cacheService.normalizeQuery(query);
+    const cacheKey = `search:${normalizedQ}:${limit}`;
+
+    const { data } = await cacheService.getOrFetch(
+      cacheKey,
+      CacheService.TTL.SEARCH,
+      () => ytService.search(query, limit)
+    );
+
+    return data?.tracks?.[0] || null;
+  }
+
+  /**
+   * Import playlist tracklist from plain text list (Max 20 per request)
+   * POST /api/music/import
+   */
+  public async importTracklist(req: Request, res: Response): Promise<void> {
+    try {
+      const { tracklist } = req.body || {};
+      if (!Array.isArray(tracklist)) {
+        res.status(400).json({ error: 'tracklist array of strings is required' });
+        return;
+      }
+
+      // Filter and limit to 20 tracks to prevent request timeouts
+      const queries = tracklist
+        .filter((t: any) => typeof t === 'string' && t.trim().length > 0)
+        .map((t: string) => t.trim())
+        .slice(0, 20);
+
+      if (queries.length === 0) {
+        res.json({
+          status: 'success',
+          tracks: [],
+          matchedCount: 0,
+          totalRequested: 0,
+        });
+        return;
+      }
+
+      const lookups = queries.map(async (query: string) => {
+        try {
+          return await this.searchMusicCatalogCached(query, 1);
+        } catch (err: any) {
+          console.warn(`[MusicController] import track match failed for "${query}":`, err.message || err);
+          return null;
+        }
+      });
+
+      const results = await Promise.all(lookups);
+      const seenIds = new Set<string>();
+      const matchedTracks: TrackMeta[] = [];
+
+      for (const track of results) {
+        if (track && track.videoId && !seenIds.has(track.videoId)) {
+          seenIds.add(track.videoId);
+          matchedTracks.push(track);
+        }
+      }
+
+      res.json({
+        status: 'success',
+        tracks: matchedTracks,
+        matchedCount: matchedTracks.length,
+        totalRequested: queries.length,
+      });
+    } catch (error: any) {
+      console.error('[MusicController] importTracklist error:', error.message || error);
+      res.status(500).json({ error: 'Failed to import tracklist', details: error.message });
+    }
+  }
 }
 
 export const musicController = new MusicController();
 export const getArtist = (req: Request, res: Response) => musicController.getArtist(req, res);
+export const searchMusicCatalogCached = (query: string, limit = 1) => musicController.searchMusicCatalogCached(query, limit);

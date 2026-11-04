@@ -51,15 +51,13 @@ export const createPlaybackEventHandler = ({
     },
 
     handleError: (errorCode, detail = '') => {
-      console.warn(`[PlaybackEventHandler] Playback error (${errorCode}):`, detail);
       consecutiveErrors += 1;
+      console.warn(`[PlaybackEventHandler] Playback error (${errorCode}, attempts: ${consecutiveErrors}):`, detail);
 
-      // If audio engine fails twice on this track, fall back to YouTube engine for this track
+      // If audio engine fails on this track, fall back to YouTube engine for this track
       if (onEngineFallback) {
-        if (consecutiveErrors >= 2) {
-          showToast?.('Audio stream failed • Switching to YouTube player');
-          onEngineFallback();
-        }
+        showToast?.('Audio stream failed • Switching to YouTube player');
+        onEngineFallback();
         return;
       }
 

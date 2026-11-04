@@ -14,5 +14,6 @@ router.route('/stream/:videoId')
   .head(streamRateLimiter, (req, res) => musicController.stream(req, res));
 router.get('/up-next/:videoId', (req, res) => musicController.getUpNext(req, res));
 router.get('/home-shelves', (req, res) => musicController.getHomeShelves(req, res));
+router.post('/import', (req, res) => musicController.importTracklist(req, res));
 
 export default router;

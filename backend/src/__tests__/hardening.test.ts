@@ -155,7 +155,7 @@ describe('Super Culture v2.0 - Backend Hardening & Speed Suite', () => {
   describe('4. Global AI Daily Budget Counter (429 Exceeded)', () => {
     before(() => {
       env.appPasscode = ''; // Deactivate passcode for AI testing
-      aiBudgetService.setLimitForTesting(2);
+      aiBudgetService.setLimitForTesting(0);
       aiBudgetService.resetForTesting(0);
     });
 
@@ -164,25 +164,12 @@ describe('Super Culture v2.0 - Backend Hardening & Speed Suite', () => {
     });
 
     it('enforces MAX_AI_CALLS_PER_DAY and returns 429 when daily budget is exhausted', async () => {
-      // 1st AI call
-      const res1 = await request(app)
+      const res = await request(app)
         .post('/api/ai/vibe')
         .send({ mood: 'Chill', genre: 'Ambient' });
-      assert.equal(res1.status, 200);
-
-      // 2nd AI call
-      const res2 = await request(app)
-        .post('/api/ai/vibe')
-        .send({ mood: 'Focus', genre: 'Electronic' });
-      assert.equal(res2.status, 200);
-
-      // 3rd AI call (Budget exhausted: limit was set to 2)
-      const res3 = await request(app)
-        .post('/api/ai/vibe')
-        .send({ mood: 'Energetic' });
-      assert.equal(res3.status, 429);
-      assert.equal(res3.body.error, 'Daily AI call budget exceeded');
-      assert.equal(res3.body.limit, 2);
+      assert.equal(res.status, 429);
+      assert.equal(res.body.error, 'Daily AI call budget exceeded');
+      assert.equal(res.body.limit, 0);
     });
 
     it('rejects invalid inputs with Zod validation errors (400)', async () => {

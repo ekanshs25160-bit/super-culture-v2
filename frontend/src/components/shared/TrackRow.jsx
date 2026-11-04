@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, Heart, Plus, Trash2 } from 'lucide-react';
+import { Play, Pause, Heart, Plus, Trash2, ArrowDown, Check, Loader2 } from 'lucide-react';
 import { useAudio } from '../../hooks/useAudio';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { useUiStore } from '../../store/useUiStore';
@@ -20,12 +20,17 @@ export default function TrackRow({
   showIndex = true,
   showLike = true,
   showAdd = true,
+  showDownload = true,
   showRemove = false,
 }) {
   const navigate = useNavigate();
   const { playTrack, currentTrack, isPlaying, togglePlay, showToast } = useAudio();
   const isLiked = useLibraryStore((s) => s.isLiked(track?.videoId || track?.id));
   const toggleLike = useLibraryStore((s) => s.toggleLike);
+  const isDownloaded = useLibraryStore((s) => s.isDownloaded(track?.videoId || track?.id));
+  const isDownloading = useLibraryStore((s) => s.isDownloading(track?.videoId || track?.id));
+  const downloadTrack = useLibraryStore((s) => s.downloadTrack);
+  const removeDownloadedTrack = useLibraryStore((s) => s.removeDownloadedTrack);
   const openAddToPlaylist = useUiStore((s) => s.openAddToPlaylist);
 
   if (!track) return null;
@@ -61,6 +66,24 @@ export default function TrackRow({
     e.stopPropagation();
     if (track.artist) {
       navigate(`/artist/${encodeURIComponent(track.artist)}`);
+    }
+  };
+
+  const handleDownloadClick = async (e) => {
+    e.stopPropagation();
+    if (isDownloading) return;
+
+    if (isDownloaded) {
+      await removeDownloadedTrack(trackId);
+      showToast(`Removed "${track.title}" from offline downloads`);
+    } else {
+      showToast(`Downloading "${track.title}" for offline playback...`);
+      const success = await downloadTrack(track);
+      if (success) {
+        showToast(`Saved "${track.title}" for offline listening`);
+      } else {
+        showToast(`Failed to download "${track.title}"`);
+      }
     }
   };
 
@@ -188,6 +211,35 @@ export default function TrackRow({
             className="w-7 h-7 rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        )}
+
+        {showDownload && (
+          <button
+            onClick={handleDownloadClick}
+            disabled={isDownloading}
+            aria-label={
+              isDownloading
+                ? `Downloading ${track.title}`
+                : isDownloaded
+                ? `Remove ${track.title} from offline downloads`
+                : `Download ${track.title} for offline playback`
+            }
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer ${
+              isDownloading
+                ? 'text-[#1ED760] bg-[#1ED760]/10 border border-[#1ED760]/30'
+                : isDownloaded
+                ? 'text-[#1ED760] bg-[#1ED760]/15 border border-[#1ED760]/30 shadow-sm'
+                : 'text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100'
+            }`}
+          >
+            {isDownloading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+            ) : isDownloaded ? (
+              <Check className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+            ) : (
+              <ArrowDown className="w-3.5 h-3.5" aria-hidden="true" />
+            )}
           </button>
         )}
 

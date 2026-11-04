@@ -409,11 +409,23 @@ export class YouTubeService {
       });
     }
 
-    if (!format || !format.decipher(client.session.player)) {
+    if (!format) {
+      throw new Error(`No compatible audio format found for video ${videoId}`);
+    }
+
+    let streamUrl = format.url;
+    if (!streamUrl && typeof format.decipher === 'function') {
+      try {
+        streamUrl = format.decipher(client.session.player);
+      } catch (decErr: any) {
+        console.warn(`[ytService] format.decipher failed for ${videoId}:`, decErr.message || decErr);
+      }
+    }
+
+    if (!streamUrl) {
       throw new Error(`Unable to decipher audio format for video ${videoId}`);
     }
 
-    const streamUrl = format.decipher(client.session.player);
     const entry: StreamEntry = {
       videoId,
       url: streamUrl,

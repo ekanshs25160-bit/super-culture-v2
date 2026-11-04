@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiClient } from '../services/api';
+import { apiClient, API_BASE } from '../services/api.js';
 import {
   MOODS_LIST,
   normalizeTrack,
@@ -7,7 +7,9 @@ import {
   persistTracks,
   loadFollowedArtists,
   saveFollowedArtists,
-} from './libraryHelpers';
+  loadDownloadedTracks,
+  saveDownloadedTracks,
+} from './libraryHelpers.js';
 
 export const useLibraryStore = create((set, get) => ({
   likedSongs: [],
@@ -15,6 +17,8 @@ export const useLibraryStore = create((set, get) => ({
   likedCount: 0,
   playlists: [],
   followedArtists: loadFollowedArtists(),
+  downloadedTracks: loadDownloadedTracks(),
+  downloadingIds: new Set(),
   mood: MOODS_LIST[0],
   mode: 'public',
   loading: false,
@@ -26,6 +30,16 @@ export const useLibraryStore = create((set, get) => ({
       get().likedSongIds.has(videoId) ||
       get().likedSongs.some((s) => s.videoId === videoId || s.id === videoId)
     );
+  },
+
+  isDownloaded: (videoId) => {
+    if (!videoId) return false;
+    return get().downloadedTracks.some((t) => (t.videoId || t.id) === videoId);
+  },
+
+  isDownloading: (videoId) => {
+    if (!videoId) return false;
+    return get().downloadingIds.has(videoId);
   },
 
   fetchLibraryOverview: async () => {
@@ -234,6 +248,117 @@ export const useLibraryStore = create((set, get) => ({
       };
     }
     return created;
+  },
+
+  createPlaylistWithMultipleTracks: async (name, tracks = []) => {
+    if (!name?.trim()) return null;
+    const created = await get().createPlaylist(name.trim());
+    if (!created) return null;
+
+    if (Array.isArray(tracks) && tracks.length > 0) {
+      const normalizedList = tracks.map(normalizeTrack).filter(Boolean);
+      const playlists = get().playlists;
+      const nextPlaylists = playlists.map((p) =>
+        p.id === created.id ? { ...p, tracks: normalizedList } : p
+      );
+      persistTracks(created.id, normalizedList);
+      set({ playlists: nextPlaylists });
+      return {
+        ...created,
+        tracks: normalizedList,
+      };
+    }
+    return created;
+  },
+
+  downloadTrack: async (track) => {
+    if (!track) return false;
+    const videoId = track.videoId || track.id;
+    if (!videoId) return false;
+    if (get().isDownloaded(videoId)) return true;
+
+    const currentDownloading = new Set(get().downloadingIds);
+    currentDownloading.add(videoId);
+    set({ downloadingIds: currentDownloading });
+
+    try {
+      // 1. Fetch signed stream URL from backend
+      const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
+      const fullAudioUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
+
+      // 2. Fetch binary audio stream data
+      const audioRes = await fetch(fullAudioUrl);
+      if (!audioRes.ok) {
+        throw new Error(`Stream fetch failed with status ${audioRes.status}`);
+      }
+      const audioBlob = await audioRes.blob();
+
+      // 3. Put into Cache API under 'sc-offline-audio'
+      if (typeof caches !== 'undefined') {
+        const cache = await caches.open('sc-offline-audio');
+        const headers = new Headers();
+        headers.set('Content-Type', audioRes.headers.get('Content-Type') || 'audio/mp4');
+        headers.set('Content-Length', String(audioBlob.size));
+        const cacheResponse = new Response(audioBlob, { headers });
+        await cache.put(`/offline-audio/${videoId}`, cacheResponse);
+
+        // Pre-cache thumbnail/cover art if available
+        const coverUrl = track.cover || track.thumbnailUrl || track.albumArt;
+        if (coverUrl && coverUrl.startsWith('http')) {
+          try {
+            const imgRes = await fetch(coverUrl, { mode: 'cors' });
+            if (imgRes.ok) {
+              await cache.put(`/offline-art/${videoId}`, imgRes);
+            }
+          } catch (imgErr) {
+            console.debug('[LibraryStore] Cover art caching skipped:', imgErr);
+          }
+        }
+      }
+
+      // 4. Persist track metadata in store and localStorage
+      const normalized = normalizeTrack(track);
+      const nextDownloaded = [
+        normalized,
+        ...get().downloadedTracks.filter((t) => (t.videoId || t.id) !== videoId),
+      ];
+      saveDownloadedTracks(nextDownloaded);
+
+      const nextDownloading = new Set(get().downloadingIds);
+      nextDownloading.delete(videoId);
+      set({
+        downloadedTracks: nextDownloaded,
+        downloadingIds: nextDownloading,
+      });
+      return true;
+    } catch (err) {
+      console.error('[LibraryStore] downloadTrack failed:', err);
+      const nextDownloading = new Set(get().downloadingIds);
+      nextDownloading.delete(videoId);
+      set({
+        downloadingIds: nextDownloading,
+        error: `Failed to download "${track.title || 'track'}"`,
+      });
+      return false;
+    }
+  },
+
+  removeDownloadedTrack: async (videoId) => {
+    if (!videoId) return;
+
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open('sc-offline-audio');
+        await cache.delete(`/offline-audio/${videoId}`);
+        await cache.delete(`/offline-art/${videoId}`);
+      } catch (err) {
+        console.warn('[LibraryStore] Cache deletion error:', err);
+      }
+    }
+
+    const nextDownloaded = get().downloadedTracks.filter((t) => (t.videoId || t.id) !== videoId);
+    saveDownloadedTracks(nextDownloaded);
+    set({ downloadedTracks: nextDownloaded });
   },
 
   isFollowingArtist: (artistName) => {

@@ -170,6 +170,10 @@ export const apiClient = {
       const res = await api.get(`/music/up-next/${videoId}`);
       return res.data;
     },
+    importTracklist: async (tracklist) => {
+      const res = await api.post('/music/import', { tracklist });
+      return res.data;
+    },
   },
 
   // AI & DJ Engine API
