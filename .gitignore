@@ -81,6 +81,68 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Capacitor & Mobile App Sync Outputs
+**/android/app/src/main/assets/public/
+**/ios/App/App/public/
+**/capacitor-cordova-android-plugins/
+**/capacitor-cordova-ios-plugins/
+**/android/app/src/main/assets/capacitor.config.json
+**/android/app/src/main/assets/capacitor.plugins.json
+**/android/app/src/main/res/xml/config.xml
+**/ios/App/App/capacitor.config.json
+**/ios/App/App/config.xml
+
+# Android / Gradle Builds & Outputs
+.gradle/
+**/android/.gradle/
+**/android/build/
+**/android/app/build/
+local.properties
+**/android/local.properties
+*.apk
+*.aab
+*.ap_
+*.aar
+*.dex
+*.class
+captures/
+.externalNativeBuild/
+.cxx/
+lint/intermediates/
+lint/generated/
+lint/outputs/
+lint/tmp/
+*.hprof
+
+# iOS / Xcode Builds & Workspaces
+DerivedData/
+**/DerivedData/
+xcuserdata/
+**/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+Pods/
+**/Pods/
+**/ios/App/build/
+*.ipa
+*.dSYM.zip
+*.dSYM/
+.swiftpm/
+
+# Mobile Keystores, Certificates & Service Credentials
+*.keystore
+*.jks
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+*.provisionprofile
+google-services.json
+GoogleService-Info.plist
+
 # Caches & Temporary Files
 .eslintcache
 .cache/

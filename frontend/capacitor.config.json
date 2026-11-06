@@ -1,0 +1,11 @@
+{
+  "appId": "com.superculture.app",
+  "appName": "Super Culture",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

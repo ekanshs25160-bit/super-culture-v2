@@ -444,6 +444,7 @@ export class AudioElementPlayer {
       if (!freshUrl) {
         throw new Error('Could not refresh stream URL');
       }
+
       this.currentSrc = freshUrl;
       if (this.audio) {
         this.audio.src = freshUrl;
