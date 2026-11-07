@@ -8,8 +8,10 @@ import {
 import { useUiStore } from '../store/useUiStore.js';
 
 // Player whose single stream refresh has already been used up (hasRetried), as after a repeated 403 / 502.
-const exhaustedPlayer = () => ({
-  handleStreamStall: () => undefined,
+const exhaustedPlayer = (currentTime = 0) => ({
+  hasRetried: true,
+  getCurrentTime: () => currentTime,
+  handleStreamStall: async () => false,
   pauseVideo: () => {},
 });
 
@@ -100,5 +102,43 @@ describe('Compatibility-mode fallback (audio -> YouTube IFrame)', () => {
     useUiStore.getState().setPlaybackEngine('Auto');
     assert.equal(useUiStore.getState().compatFallback, null);
     assert.equal(useUiStore.getState().temporaryEngineOverride, null);
+  });
+
+  it('triggers onUnrecoverable immediately on first delegated error when AudioElementPlayer already retried at 94.21s', () => {
+    let stallCalls = 0;
+    let fallbackPayload = null;
+
+    const playerAfterFailedRefresh = {
+      hasRetried: true,
+      getCurrentTime: () => 94.212765,
+      handleStreamStall: async () => {
+        stallCalls++;
+        return false;
+      },
+      pauseVideo: () => {},
+    };
+
+    const handler = createPlaybackEventHandler({
+      showToast: () => {},
+      onUnrecoverable: ({ videoId, player }) => {
+        const seconds = player.getCurrentTime();
+        useUiStore.getState().setCompatFallback({ videoId, seconds });
+        useUiStore.getState().setTemporaryEngineOverride('youtube');
+        fallbackPayload = { videoId, seconds };
+        return true;
+      },
+    });
+
+    handler.setTrack('OfMBWq8Agf0');
+    handler.handleError(100, '502 Bad Gateway after refresh', playerAfterFailedRefresh);
+
+    assert.equal(stallCalls, 0, 'PlaybackEventHandler must not call handleStreamStall a second time');
+    assert.deepEqual(fallbackPayload, { videoId: 'OfMBWq8Agf0', seconds: 94.212765 });
+    assert.deepEqual(useUiStore.getState().compatFallback, {
+      videoId: 'OfMBWq8Agf0',
+      seconds: 94.212765,
+    });
+    assert.equal(useUiStore.getState().temporaryEngineOverride, 'youtube');
+    assert.equal(getConsecutiveErrors(), 0);
   });
 });

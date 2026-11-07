@@ -84,11 +84,10 @@ const AudioEngineHost = memo(function AudioEngineHost() {
       onUnrecoverable: ({ videoId }) => {
         if (!videoId) return false;
         const player = audioPlayerRef.current;
+        const playerTime = player?.getCurrentTime?.() || 0;
         const tracked = lastTimeRef.current;
-        const seconds =
-          tracked.videoId === videoId && tracked.seconds > 0
-            ? tracked.seconds
-            : player?.getCurrentTime?.() || 0;
+        const trackedTime = tracked.videoId === videoId && tracked.seconds > 0 ? tracked.seconds : 0;
+        const seconds = playerTime > 0 ? playerTime : trackedTime > 0 ? trackedTime : currentTime || 0;
 
         player?.pauseVideo();
         setCompatFallback({ videoId, seconds });
@@ -165,7 +164,7 @@ const AudioEngineHost = memo(function AudioEngineHost() {
       });
 
       player.on('onTimeUpdate', (currentTime) => {
-        if (player.currentVideoId) {
+        if (player.currentVideoId && currentTime > 0) {
           lastTimeRef.current = { videoId: player.currentVideoId, seconds: currentTime };
         }
         if (handlerRef.current) {

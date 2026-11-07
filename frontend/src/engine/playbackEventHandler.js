@@ -98,8 +98,9 @@ export const createPlaybackEventHandler = ({
       }, 500);
     };
 
-    // If < 3, retry the stream once. If the retry fails, call skipNext(1) with 500ms delay
-    const canRetry = currentVideoId && !retriedTracks.has(currentVideoId);
+    // If < 3, retry the stream once (unless the player already exhausted its internal URL refresh).
+    // If the retry fails, call triggerDelayedSkip() (which invokes onUnrecoverable first).
+    const canRetry = currentVideoId && !retriedTracks.has(currentVideoId) && !player?.hasRetried;
     if (canRetry) {
       retriedTracks.add(currentVideoId);
 
@@ -118,10 +119,16 @@ export const createPlaybackEventHandler = ({
       }
 
       if (retryPromise && typeof retryPromise.then === 'function') {
-        retryPromise.catch((retryErr) => {
-          console.warn('[PlaybackEventHandler] Retry stream failed:', retryErr);
-          triggerDelayedSkip();
-        });
+        retryPromise
+          .then((recovered) => {
+            if (recovered === false) {
+              triggerDelayedSkip();
+            }
+          })
+          .catch((retryErr) => {
+            console.warn('[PlaybackEventHandler] Retry stream failed:', retryErr);
+            triggerDelayedSkip();
+          });
         return;
       }
     }

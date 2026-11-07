@@ -89,9 +89,10 @@ const YouTubePlayer = memo(function YouTubePlayer() {
 
     if (isReadyRef.current && playerInstanceRef.current && currentTrack?.videoId) {
       try {
+        const startSeconds = resumeFromFallback(currentTrack.videoId) || 0;
         playerInstanceRef.current.loadVideoById({
           videoId: currentTrack.videoId,
-          startSeconds: 0,
+          startSeconds,
         });
         playerInstanceRef.current.playVideo();
       } catch (err) {

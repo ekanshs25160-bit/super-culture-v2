@@ -340,4 +340,43 @@ describe('AudioElementPlayer Unit Tests', () => {
     assert.equal(player.audio.paused, false);
     assert.equal(player.getPlayerState(), PlayerState.PLAYING);
   });
+
+  it('preserves target seek timestamp (94.21s) across a failed stream refresh when audio.currentTime resets to 0', async () => {
+    let callCount = 0;
+    apiClient.music.getStreamUrl = async (videoId) => {
+      callCount++;
+      return { url: `/api/yt/stream/${videoId}?t=seek-token-${callCount}` };
+    };
+
+    await player.loadVideoById({ videoId: 'OfMBWq8Agf0' });
+    assert.equal(callCount, 1);
+
+    // User scrubs past the 1 MiB boundary to 94.21s
+    player.seekTo(94.212765);
+    assert.equal(player.getCurrentTime(), 94.212765);
+
+    // Simulate browser behavior where assigning a failing 502 src resets audio.currentTime to 0
+    // and play() rejects with a media error or AbortError
+    player.audio.play = async () => {
+      player.audio.currentTime = 0;
+      const err = new Error('The play() request was interrupted by a failed media load (502)');
+      err.name = 'AbortError';
+      throw err;
+    };
+
+    let emittedError = null;
+    player.on('onError', (code, err) => {
+      emittedError = { code, err };
+    });
+
+    // First error at 94.21s triggers internal signed-URL refresh (handleStreamStall)
+    player.audio.dispatchEvent({ type: 'error' });
+    await new Promise((r) => setTimeout(r, 30));
+
+    assert.equal(callCount, 2, 'Should refresh signed URL once');
+    assert.equal(player.hasRetried, true, 'Player should mark hasRetried = true');
+    assert.ok(emittedError !== null, 'Failed refresh play() must emit onError for fallback');
+    assert.equal(player.audio.currentTime, 0, 'Underlying element reset to 0');
+    assert.equal(player.getCurrentTime(), 94.212765, 'getCurrentTime() must preserve the 94.212765s seek target');
+  });
 });

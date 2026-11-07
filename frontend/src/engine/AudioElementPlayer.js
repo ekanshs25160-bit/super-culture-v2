@@ -25,6 +25,9 @@ export class AudioElementPlayer {
     this.currentSrc = null;
     this.currentBlobUrl = null;
     this.hasRetried = false;
+    this.isRefreshing = false;
+    this.userPaused = false;
+    this._lastKnownTime = 0;
     this.volume = 0.74;
     this.urlCache = new Map(); // videoId -> { url, timestamp }
     this.loadPromise = null;
@@ -124,6 +127,7 @@ export class AudioElementPlayer {
 
     audio.addEventListener('ended', () => {
       if (audio.src?.startsWith('data:audio')) return;
+      this._lastKnownTime = 0;
       this.state = PlayerState.ENDED;
       this.emit('onEnded');
       this.emit('onStateChange', PlayerState.ENDED);
@@ -131,6 +135,9 @@ export class AudioElementPlayer {
 
     audio.addEventListener('timeupdate', () => {
       if (audio.src?.startsWith('data:audio')) return;
+      if (audio.currentTime > 0 && !this.isRefreshing) {
+        this._lastKnownTime = audio.currentTime;
+      }
       this.emit('onTimeUpdate', audio.currentTime, audio.duration);
     });
 
@@ -178,6 +185,10 @@ export class AudioElementPlayer {
     if (this.errorReportedFor === targetId) {
       return;
     }
+    if (this.audio && this.audio.currentTime > 0) {
+      this._lastKnownTime = this.audio.currentTime;
+    }
+    this.hasRetried = true;
     this.errorReportedFor = targetId;
     this.state = PlayerState.UNSTARTED;
     this.emit('onError', code, err);
@@ -216,6 +227,9 @@ export class AudioElementPlayer {
 
     this.currentVideoId = videoId;
     this.hasRetried = false;
+    this.isRefreshing = false;
+    this.userPaused = false;
+    this._lastKnownTime = Math.max(0, Number(startSeconds) || 0);
     this.state = PlayerState.BUFFERING;
     this.emit('onBuffering');
     this.emit('onStateChange', PlayerState.BUFFERING);
@@ -287,9 +301,13 @@ export class AudioElementPlayer {
             await this.audio.play();
           } catch (playErr) {
             if (token !== this.loadToken) return;
-            if (playErr.name === 'NotAllowedError') {
+            if (playErr?.name === 'NotAllowedError') {
               console.warn('[AudioElementPlayer] Autoplay blocked by user-gesture policy.');
               this.emit('onAutoplayBlocked');
+            } else if (playErr?.name === 'AbortError' && (this.userPaused || this.isRefreshing) && !this.audio?.error) {
+              // Interrupted by explicit user pause or in-flight URL refresh
+            } else if (!this.hasRetried && !this.isRefreshing) {
+              await this.handleStreamStall();
             } else {
               console.warn('[AudioElementPlayer] loadVideoById play error:', playErr);
               this.reportError(100, playErr, videoId);
@@ -315,6 +333,9 @@ export class AudioElementPlayer {
   async cueVideoById({ videoId, startSeconds = 0 }) {
     this.currentVideoId = videoId;
     this.hasRetried = false;
+    this.isRefreshing = false;
+    this.userPaused = false;
+    this._lastKnownTime = Math.max(0, Number(startSeconds) || 0);
     this.state = PlayerState.CUED;
     this.emit('onStateChange', PlayerState.CUED);
 
@@ -371,21 +392,33 @@ export class AudioElementPlayer {
 
   async playVideo() {
     if (!this.audio) return;
+    this.userPaused = false;
 
     try {
       if (this.loadPromise) {
         await this.loadPromise;
       }
 
-      if (this.audio.error || !this.audio.src) {
+      if (this.userPaused || !this.audio.src) {
+        return;
+      }
+
+      if (this.audio.error) {
+        if (!this.hasRetried && !this.isRefreshing && this.currentVideoId) {
+          await this.handleStreamStall();
+        } else {
+          this.reportError(100, this.audio.error, this.currentVideoId);
+        }
         return;
       }
 
       await this.audio.play();
     } catch (err) {
-      if (err.name === 'NotAllowedError') {
+      if (err?.name === 'NotAllowedError') {
         console.warn('[AudioElementPlayer] Autoplay blocked by user-gesture policy.');
         this.emit('onAutoplayBlocked');
+      } else if (err?.name === 'AbortError' && (this.userPaused || this.isRefreshing) && !this.audio?.error) {
+        // Interrupted by explicit user pause or in-flight URL refresh
       } else {
         console.warn('[AudioElementPlayer] playVideo error:', err);
         this.reportError(100, err, this.currentVideoId);
@@ -394,6 +427,7 @@ export class AudioElementPlayer {
   }
 
   pauseVideo() {
+    this.userPaused = true;
     if (this.audio) {
       this.audio.pause();
     }
@@ -402,6 +436,9 @@ export class AudioElementPlayer {
   stopVideo() {
     this.loadToken++;
     this.loadPromise = null;
+    this.userPaused = true;
+    this.isRefreshing = false;
+    this._lastKnownTime = 0;
     if (this.audio) {
       this.audio.pause();
       this.audio.currentTime = 0;
@@ -411,8 +448,10 @@ export class AudioElementPlayer {
 
   seekTo(seconds) {
     if (!this.audio) return;
+    const target = Math.max(0, Number(seconds) || 0);
+    this._lastKnownTime = target;
     try {
-      this.audio.currentTime = seconds;
+      this.audio.currentTime = target;
     } catch (err) {
       console.warn('[AudioElementPlayer] Seek error:', err);
     }
@@ -433,7 +472,12 @@ export class AudioElementPlayer {
   }
 
   getCurrentTime() {
-    return this.audio ? this.audio.currentTime || 0 : 0;
+    const audioTime = this.audio ? this.audio.currentTime || 0 : 0;
+    if (audioTime > 0) {
+      this._lastKnownTime = audioTime;
+      return audioTime;
+    }
+    return this._lastKnownTime || 0;
   }
 
   getDuration() {
@@ -477,17 +521,23 @@ export class AudioElementPlayer {
    * Recover from stream stalls or token expiry (HTTP 410) by re-requesting stream URL once
    */
   async handleStreamStall() {
-    if (this.hasRetried || !this.currentVideoId) return;
+    if (this.hasRetried || this.isRefreshing || !this.currentVideoId) return false;
     this.hasRetried = true;
+    this.isRefreshing = true;
 
+    const videoId = this.currentVideoId;
     const resumeTime = this.getCurrentTime();
-    console.log(`[AudioElementPlayer] Stream stalled or token expired. Refreshing signed URL for ${this.currentVideoId} at ${resumeTime}s...`);
+    if (resumeTime > 0) {
+      this._lastKnownTime = resumeTime;
+    }
+    console.log(`[AudioElementPlayer] Stream stalled or token expired. Refreshing signed URL for ${videoId} at ${resumeTime}s...`);
 
     // Invalidate cached URL so fresh HMAC token is fetched
-    this.urlCache.delete(this.currentVideoId);
+    this.urlCache.delete(videoId);
 
     try {
-      const freshUrl = await this.prepareTrack(this.currentVideoId);
+      const freshUrl = await this.prepareTrack(videoId);
+      if (this.currentVideoId !== videoId) return false;
       if (!freshUrl) {
         throw new Error('Could not refresh stream URL');
       }
@@ -496,21 +546,42 @@ export class AudioElementPlayer {
       if (this.audio) {
         this.audio.src = freshUrl;
         this.audio.currentTime = resumeTime;
-        await this.playVideo();
+        if (!this.userPaused) {
+          const playPromise = this.audio.play();
+          if (playPromise && typeof playPromise.then === 'function') {
+            await playPromise;
+          }
+        }
       }
+      return true;
     } catch (err) {
-      console.warn('[AudioElementPlayer] Re-request on stall failed:', err);
-      this.reportError(101, err, this.currentVideoId);
+      if (this.currentVideoId !== videoId) return false;
+      if (err?.name === 'NotAllowedError') {
+        console.warn('[AudioElementPlayer] Autoplay blocked by user-gesture policy.');
+        this.emit('onAutoplayBlocked');
+        return false;
+      }
+      if (err?.name === 'AbortError' && this.userPaused && !this.audio?.error) {
+        return false;
+      }
+      if (this.errorReportedFor !== videoId) {
+        console.warn('[AudioElementPlayer] Re-request on stall failed:', err);
+      }
+      this.reportError(101, err, videoId);
+      return false;
+    } finally {
+      if (this.currentVideoId === videoId) {
+        this.isRefreshing = false;
+      }
     }
   }
 
   handleAudioError(e) {
-    const isUnsupported =
-      this.audio?.error?.code === 4 ||
-      e?.name === 'NotSupportedError' ||
-      e?.message?.includes('no supported source');
+    if (this.audio && this.audio.currentTime > 0) {
+      this._lastKnownTime = this.audio.currentTime;
+    }
 
-    if (!isUnsupported && !this.hasRetried && this.currentVideoId) {
+    if (!this.hasRetried && this.currentVideoId) {
       this.handleStreamStall();
       return;
     }
@@ -523,6 +594,9 @@ export class AudioElementPlayer {
     this.loadPromise = null;
     this.unlocked = false;
     this.isUnlocking = false;
+    this.isRefreshing = false;
+    this.userPaused = false;
+    this._lastKnownTime = 0;
     if (this.currentBlobUrl) {
       try {
         URL.revokeObjectURL(this.currentBlobUrl);
