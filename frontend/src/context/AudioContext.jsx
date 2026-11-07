@@ -19,6 +19,7 @@ export const AudioContext = createContext({
   isAiDjActive: false,
   privacyMode: 'public',
   activeMood: { index: 0, name: 'Energetic' },
+  unlock: () => {},
   playSelectedTrack: () => {},
   playTrack: () => {},
   skipTrack: () => {},
@@ -186,9 +187,21 @@ export const AudioProvider = ({ children }) => {
     setIsPlayerReady(true);
   }, []);
 
+  // Synchronously unlock audio inside user gesture
+  const unlock = useCallback(() => {
+    if (playerRef.current && typeof playerRef.current.unlock === 'function') {
+      playerRef.current.unlock();
+    }
+  }, []);
+
   // Play a track and dynamically replace or update queue
   const playSelectedTrack = useCallback(async (track, customQueue = null) => {
     if (!track) return;
+
+    // Synchronously unlock audio on the native player inside user gesture BEFORE any await!
+    if (playerRef.current && typeof playerRef.current.unlock === 'function') {
+      playerRef.current.unlock();
+    }
 
     if (isEmptyPlayer) {
       setIsEmptyPlayer(false);
@@ -252,6 +265,11 @@ export const AudioProvider = ({ children }) => {
 
   // Toggle master Play / Pause
   const togglePlay = useCallback(() => {
+    // Synchronously unlock audio inside user gesture
+    if (playerRef.current && typeof playerRef.current.unlock === 'function') {
+      playerRef.current.unlock();
+    }
+
     if (isEmptyPlayer) {
       setIsEmptyPlayer(false);
     }
@@ -477,6 +495,7 @@ export const AudioProvider = ({ children }) => {
         isAiDjActive,
         privacyMode,
         activeMood,
+        unlock,
         playSelectedTrack,
         playTrack,
         skipTrack,

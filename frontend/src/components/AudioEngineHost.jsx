@@ -48,6 +48,21 @@ const AudioEngineHost = memo(function AudioEngineHost() {
     setActiveEngine(effectiveEngine);
   }, [effectiveEngine, setActiveEngine]);
 
+  // One-time global interaction unlock listener for mobile WebViews / Mobile Safari
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      audioPlayerRef.current?.unlock();
+    };
+    window.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true });
+    window.addEventListener('touchend', handleFirstInteraction, { once: true, passive: true });
+    window.addEventListener('click', handleFirstInteraction, { once: true });
+    return () => {
+      window.removeEventListener('touchstart', handleFirstInteraction);
+      window.removeEventListener('touchend', handleFirstInteraction);
+      window.removeEventListener('click', handleFirstInteraction);
+    };
+  }, []);
+
   // Setup shared event handler
   useEffect(() => {
     handlerRef.current = createPlaybackEventHandler({

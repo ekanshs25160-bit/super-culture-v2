@@ -23,7 +23,7 @@ export default function PlayerBar() {
     currentTrack, queue, isPlaying, currentTime, duration, volume,
     isShuffle, isRepeat, isEmptyPlayer, toastMessage, playTrack,
     togglePlay, skipNext, skipPrev, seekTo, setVolumeLevel,
-    toggleShuffle, toggleRepeat, showToast,
+    toggleShuffle, toggleRepeat, showToast, unlock,
   } = useContext(AudioContext);
 
   const isLiked = useLibraryStore((s) => s.isLiked(currentTrack?.videoId || currentTrack?.id));
@@ -99,6 +99,9 @@ export default function PlayerBar() {
   };
 
   const handleMasterPlay = () => {
+    if (typeof unlock === 'function') {
+      unlock();
+    }
     if (isAutoplayBlocked) {
       setAutoplayBlocked(false);
     }

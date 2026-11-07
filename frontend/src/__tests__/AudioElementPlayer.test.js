@@ -296,4 +296,48 @@ describe('AudioElementPlayer Unit Tests', () => {
     await player.playVideo();
     assert.equal(player.getPlayerState(), PlayerState.PLAYING);
   });
+
+  it('synchronous unlock: blesses audio element with silent WAV data URI without emitting state changes', async () => {
+    let recordedEvents = [];
+    player.on('onPlaying', () => recordedEvents.push('playing'));
+    player.on('onPaused', () => recordedEvents.push('paused'));
+    player.on('onStateChange', (s) => recordedEvents.push(`state-${s}`));
+
+    assert.equal(player.unlocked, false);
+    assert.equal(player.getPlayerState(), PlayerState.UNSTARTED);
+
+    // Call unlock synchronously
+    player.unlock();
+
+    assert.equal(player.unlocked, true);
+    assert(player.audio.src.startsWith('data:audio/wav;base64,'));
+
+    // Wait a tick for unlock's playPromise.then to resolve and pause
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Must NOT leak any events or change state away from UNSTARTED
+    assert.deepEqual(recordedEvents, [], 'Unlock phase must not emit playback events');
+    assert.equal(player.getPlayerState(), PlayerState.UNSTARTED);
+
+    // Calling unlock again should be an immediate no-op
+    const previousSrc = player.audio.src;
+    player.unlock();
+    assert.equal(player.audio.src, previousSrc);
+  });
+
+  it('unlock does not pause real track if loadVideoById starts before unlock resolves', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=fast-track`,
+    });
+
+    // Synchronously unlock
+    player.unlock();
+
+    // Immediately load real track
+    await player.loadVideoById({ videoId: 'fast-track' });
+
+    assert.equal(player.audio.src, '/api/yt/stream/fast-track?t=fast-track');
+    assert.equal(player.audio.paused, false);
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+  });
 });

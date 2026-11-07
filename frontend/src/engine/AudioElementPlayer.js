@@ -30,6 +30,8 @@ export class AudioElementPlayer {
     this.loadPromise = null;
     this.loadToken = 0;
     this.errorReportedFor = null;
+    this.unlocked = false;
+    this.isUnlocking = false;
 
     this.initAudioElement();
   }
@@ -58,14 +60,53 @@ export class AudioElementPlayer {
     }
   }
 
+  /**
+   * One-time user gesture audio unlock for Mobile Safari and WebView autoplay restrictions.
+   * Called synchronously at the start of a user tap handler before any async/await operations.
+   */
+  unlock() {
+    this.initAudioElement();
+    if (this.unlocked || !this.audio) return;
+    this.unlocked = true;
+    this.isUnlocking = true;
+
+    try {
+      // Tiny valid silent WAV (4-byte 16-bit PCM mono silence) to bless the audio element
+      this.audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
+      const playPromise = this.audio.play();
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise
+          .then(() => {
+            if (this.audio && this.audio.src && this.audio.src.startsWith('data:audio')) {
+              this.audio.pause();
+            }
+            this.isUnlocking = false;
+          })
+          .catch(() => {
+            this.isUnlocking = false;
+          });
+      } else {
+        if (this.audio && this.audio.src && this.audio.src.startsWith('data:audio')) {
+          this.audio.pause();
+        }
+        this.isUnlocking = false;
+      }
+    } catch (_err) {
+      this.isUnlocking = false;
+    }
+  }
+
   attachEventListeners(audio) {
     audio.addEventListener('playing', () => {
+      if (audio.src?.startsWith('data:audio')) return;
+      this.isUnlocking = false;
       this.state = PlayerState.PLAYING;
       this.emit('onPlaying');
       this.emit('onStateChange', PlayerState.PLAYING);
     });
 
     audio.addEventListener('pause', () => {
+      if (audio.src?.startsWith('data:audio')) return;
       // Avoid firing paused when playback naturally ended
       if (this.state !== PlayerState.ENDED) {
         this.state = PlayerState.PAUSED;
@@ -75,26 +116,31 @@ export class AudioElementPlayer {
     });
 
     audio.addEventListener('waiting', () => {
+      if (audio.src?.startsWith('data:audio')) return;
       this.state = PlayerState.BUFFERING;
       this.emit('onBuffering');
       this.emit('onStateChange', PlayerState.BUFFERING);
     });
 
     audio.addEventListener('ended', () => {
+      if (audio.src?.startsWith('data:audio')) return;
       this.state = PlayerState.ENDED;
       this.emit('onEnded');
       this.emit('onStateChange', PlayerState.ENDED);
     });
 
     audio.addEventListener('timeupdate', () => {
+      if (audio.src?.startsWith('data:audio')) return;
       this.emit('onTimeUpdate', audio.currentTime, audio.duration);
     });
 
     audio.addEventListener('error', (e) => {
+      if (audio.src?.startsWith('data:audio')) return;
       this.handleAudioError(e);
     });
 
     audio.addEventListener('stalled', () => {
+      if (audio.src?.startsWith('data:audio')) return;
       this.handleStreamStall();
     });
   }
@@ -231,6 +277,7 @@ export class AudioElementPlayer {
         }
 
         this.currentSrc = targetSrc;
+        this.isUnlocking = false;
 
         if (this.audio) {
           this.audio.src = targetSrc;
@@ -474,6 +521,8 @@ export class AudioElementPlayer {
   destroy() {
     this.loadToken++;
     this.loadPromise = null;
+    this.unlocked = false;
+    this.isUnlocking = false;
     if (this.currentBlobUrl) {
       try {
         URL.revokeObjectURL(this.currentBlobUrl);
