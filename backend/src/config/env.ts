@@ -31,7 +31,10 @@ const parsedCorsOrigins = rawCors
   .map((s) => s.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
-const fallbackStreamSecret = crypto.randomBytes(32).toString('hex');
+const fallbackStreamSecret =
+  process.env.NODE_ENV === 'production'
+    ? crypto.randomBytes(32).toString('hex')
+    : 'super-culture-stable-dev-stream-secret-7472220bddcc205bab95e78943a9db4678a9dc6cbaffe68585c8aefdfb7212e9';
 
 export const env: AppConfig = {
   port: Number(process.env.PORT) || 5001,
