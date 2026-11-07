@@ -1,14 +1,17 @@
 import './ytEval.js';
 import { Innertube, UniversalCache, ClientType } from 'youtubei.js';
 import { LRUCache } from 'lru-cache';
+import { getPoToken } from './poTokenService.js';
 import { TrackMeta, StreamEntry, ArtistMeta, SearchResultPayload } from '../types/index.js';
 
-const CLIENT_ORDER = ['IOS', 'MWEB', 'MUSIC'] as const;
+const CLIENT_ORDER = ['IOS', 'ANDROID', 'MWEB', 'MUSIC'] as const;
 
 export const getClientUserAgent = (clientName?: string): string => {
   switch (clientName) {
     case 'IOS':
       return 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)';
+    case 'ANDROID':
+      return 'com.google.android.youtube/19.44.38 (Linux; U; Android 14; en_US; Pixel 8 Pro Build/UQ1A.240205.004)';
     case 'MWEB':
       return 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
     case 'MUSIC':
@@ -34,9 +37,12 @@ export const getYtClient = async (retries = 3): Promise<Innertube> => {
     while (attempt < retries) {
       try {
         attempt++;
+        const poData = await getPoToken();
         const client = await Innertube.create({
           cache: new UniversalCache(false),
-          generate_session_locally: true,
+          generate_session_locally: !poData.visitorData,
+          visitor_data: poData.visitorData,
+          po_token: poData.poToken,
           client_type: ClientType.IOS, // <-- Force IOS globally here
         });
         ytInstance = client;
@@ -437,18 +443,49 @@ export class YouTubeService {
 
   private async probeStreamUrl(url: string, clientName: string): Promise<boolean> {
     try {
+      const userAgent = getClientUserAgent(clientName);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
       const res = await fetch(url, {
         method: 'GET',
         headers: {
-          'User-Agent': getClientUserAgent(clientName),
+          'User-Agent': userAgent,
           Range: 'bytes=0-1',
         },
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      return res.status === 200 || res.status === 206;
+
+      if (res.status !== 200 && res.status !== 206) {
+        return false;
+      }
+
+      // Parse total size from content-range
+      const contentRange = res.headers.get('content-range') || '';
+      const match = /\/(\d+)$/.exec(contentRange);
+      const total = match ? parseInt(match[1], 10) : null;
+
+      // If total > 1048600 (> 1 MiB), verify the stream does not fail at the 1 MiB PO boundary
+      if (total && total > 1048600) {
+        const deepController = new AbortController();
+        const deepTimeout = setTimeout(() => deepController.abort(), 4000);
+        const deepRes = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'User-Agent': userAgent,
+            Range: 'bytes=1048576-1048600',
+          },
+          signal: deepController.signal,
+        });
+        clearTimeout(deepTimeout);
+
+        if (deepRes.status !== 206) {
+          console.warn(`[ytService] ${clientName} failed 1 MiB throttle probe (status: ${deepRes.status})`);
+          return false;
+        }
+      }
+
+      return true;
     } catch (probeErr: any) {
       console.warn(`[ytService] probe exception for ${clientName}:`, probeErr.message || probeErr);
       return false;
@@ -463,6 +500,8 @@ export class YouTubeService {
     }
 
     const client = await this.getClient();
+    const poData = await getPoToken();
+    const poToken = poData.poToken;
 
     for (const name of CLIENT_ORDER) {
       try {
@@ -481,7 +520,11 @@ export class YouTubeService {
           continue;
         }
 
-        const url = format.url ?? (typeof format.decipher === 'function' ? await format.decipher(client.session.player) : undefined);
+        let url = format.url ?? (typeof format.decipher === 'function' ? await format.decipher(client.session.player) : undefined);
+        if (url && poToken && !url.includes('pot=')) {
+          url += `${url.includes('?') ? '&' : '?'}pot=${encodeURIComponent(poToken)}`;
+        }
+
         if (!url || !(await this.probeStreamUrl(url, name))) {
           console.warn(`[ytService] ${videoId}: ${name} stream probe failed or returned non-200/206 status`);
           continue;

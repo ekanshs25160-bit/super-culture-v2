@@ -2,6 +2,13 @@ import { Innertube, Platform, UniversalCache, Log } from 'youtubei.js';
 import vm from 'node:vm';
 import axios from 'axios';
 
+let getPoToken;
+try {
+  ({ getPoToken } = await import('../dist/services/poTokenService.js'));
+} catch {
+  ({ getPoToken } = await import('../src/services/poTokenService.ts'));
+}
+
 // Suppress noisy parser warnings during diagnostics
 Log.setLevel(Log.Level.NONE);
 
@@ -37,9 +44,16 @@ const USER_AGENTS = {
   MUSIC: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
 };
 
+// 1. Obtain BotGuard Proof of Origin (po_token) paired with visitor_data
+const { visitorData, poToken } = await getPoToken();
+console.log(`[Diagnostic] Using visitorData: ${visitorData ? visitorData.slice(0, 15) + '...' : 'none'}`);
+console.log(`[Diagnostic] Using poToken: ${poToken ? poToken.slice(0, 20) + '...' : 'none'}\n`);
+
 const yt = await Innertube.create({
   cache: new UniversalCache(false),
-  generate_session_locally: true,
+  generate_session_locally: !visitorData,
+  visitor_data: visitorData,
+  po_token: poToken,
 });
 
 async function probeRange(url, userAgent, range) {
@@ -125,6 +139,11 @@ for (const client of clientsToTest) {
         }
 
         if (streamUrl) {
+          // Append po_token query param if available and not present
+          if (poToken && !streamUrl.includes('pot=')) {
+            streamUrl += `${streamUrl.includes('?') ? '&' : '?'}pot=${encodeURIComponent(poToken)}`;
+          }
+
           status = 'RESOLVED';
           details = `${format.mime_type?.split(';')[0] || 'audio'} | itag:${format.itag} | ${Math.round((format.bitrate || 0) / 1000)}kbps`;
 
@@ -162,7 +181,7 @@ for (const client of clientsToTest) {
   });
 
   console.log(`[${client.name.padEnd(11)}] Header: ${headerProbe.padEnd(10)} | Deep (2MB): ${deepProbe.padEnd(10)} | ${verdict}`);
-  if (details && verdict.includes('NO_STREAM') || verdict.includes('EXCEPTION')) {
+  if (details && (verdict.includes('NO_STREAM') || verdict.includes('EXCEPTION'))) {
     console.log(`              Reason: ${details}`);
   }
 }
