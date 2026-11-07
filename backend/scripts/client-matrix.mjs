@@ -2,13 +2,6 @@ import { Innertube, Platform, UniversalCache, Log } from 'youtubei.js';
 import vm from 'node:vm';
 import axios from 'axios';
 
-let getPoToken;
-try {
-  ({ getPoToken } = await import('../dist/services/poTokenService.js'));
-} catch {
-  ({ getPoToken } = await import('../src/services/poTokenService.ts'));
-}
-
 // Suppress noisy parser warnings during diagnostics
 Log.setLevel(Log.Level.NONE);
 
@@ -37,23 +30,14 @@ const USER_AGENTS = {
   MWEB: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
   WEB: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
   TV: 'Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 NativeTV/5.0 TV Safari/538.1',
-  TV_EMBED: 'Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 NativeTV/5.0 TV Safari/538.1',
-  TV_EMBEDDED: 'Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 NativeTV/5.0 TV Safari/538.1',
   WEB_CREATOR: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
   VISIONOS: 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)',
   MUSIC: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
 };
 
-// 1. Obtain BotGuard Proof of Origin (po_token) paired with visitor_data
-const { visitorData, poToken } = await getPoToken();
-console.log(`[Diagnostic] Using visitorData: ${visitorData ? visitorData.slice(0, 15) + '...' : 'none'}`);
-console.log(`[Diagnostic] Using poToken: ${poToken ? poToken.slice(0, 20) + '...' : 'none'}\n`);
-
 const yt = await Innertube.create({
   cache: new UniversalCache(false),
-  generate_session_locally: !visitorData,
-  visitor_data: visitorData,
-  po_token: poToken,
+  generate_session_locally: true,
 });
 
 async function probeRange(url, userAgent, range) {
@@ -83,7 +67,6 @@ async function probeRange(url, userAgent, range) {
 }
 
 const clientsToTest = [
-  { name: 'TV_EMBEDDED', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'TV_EMBEDDED' }) },
   { name: 'IOS', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'IOS' }) },
   { name: 'ANDROID', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'ANDROID' }) },
   { name: 'MWEB', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'MWEB' }) },
@@ -139,11 +122,6 @@ for (const client of clientsToTest) {
         }
 
         if (streamUrl) {
-          // Append po_token query param if available and not present
-          if (poToken && !streamUrl.includes('pot=')) {
-            streamUrl += `${streamUrl.includes('?') ? '&' : '?'}pot=${encodeURIComponent(poToken)}`;
-          }
-
           status = 'RESOLVED';
           details = `${format.mime_type?.split(';')[0] || 'audio'} | itag:${format.itag} | ${Math.round((format.bitrate || 0) / 1000)}kbps`;
 

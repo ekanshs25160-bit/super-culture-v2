@@ -26,6 +26,11 @@ const YouTubePlayer = memo(function YouTubePlayer() {
   const isReadyRef = useRef(false);
   const initialVideoIdRef = useRef(currentTrack?.videoId);
   const initialTimeRef = useRef(currentTime);
+  // When the audio engine failed mid-track, resume from the offset it reached.
+  const resumeFromFallback = (videoId) => {
+    const fb = useUiStore.getState().compatFallback;
+    return fb && fb.videoId === videoId && fb.seconds > 0 ? fb.seconds : null;
+  };
 
   const handlerRef = useRef(null);
   const wasPlayingBeforeHiddenRef = useRef(false);
@@ -155,8 +160,9 @@ const YouTubePlayer = memo(function YouTubePlayer() {
 
             if (targetVideoId) {
               try {
-                if (initialTimeRef.current && initialTimeRef.current > 0) {
-                  event.target.seekTo(initialTimeRef.current, true);
+                const resumeAt = resumeFromFallback(targetVideoId) ?? initialTimeRef.current;
+                if (resumeAt && resumeAt > 0) {
+                  event.target.seekTo(resumeAt, true);
                 }
                 event.target.playVideo();
               } catch (err) {

@@ -35,6 +35,7 @@ export const createPlaybackEventHandler = ({
   onEngineFallback,
   pauseVideo,
   retryStream,
+  onUnrecoverable,
 } = {}) => {
   let currentVideoId = null;
   let lastPlayerInstance = null;
@@ -70,6 +71,21 @@ export const createPlaybackEventHandler = ({
     }
 
     const triggerDelayedSkip = () => {
+      // Give the host a chance to hand the track to another engine (e.g. YouTube IFrame)
+      // before giving up on it and skipping.
+      if (typeof onUnrecoverable === 'function') {
+        let handled = false;
+        try {
+          handled = onUnrecoverable({ videoId: currentVideoId, error: e, player }) === true;
+        } catch (fallbackErr) {
+          console.warn('[PlaybackEventHandler] onUnrecoverable failed:', fallbackErr);
+        }
+        if (handled) {
+          // A different engine now owns this track; don't let this failure trip the circuit breaker.
+          consecutiveErrors = 0;
+          return;
+        }
+      }
       showToast?.('Track unavailable or restricted • Skipping to next...');
       setTimeout(() => {
         const skipNext = getSkipNext?.();

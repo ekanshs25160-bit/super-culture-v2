@@ -6,6 +6,8 @@ import { resolveEffectiveEngine, isMobileDevice } from '../engine/PlayerConstant
 import { createPlaybackEventHandler } from '../engine/playbackEventHandler';
 import YouTubePlayer from './YouTubePlayer';
 
+export const COMPAT_MODE_NOTICE = 'Playing in compatibility mode (pauses when screen locks)';
+
 const AudioEngineHost = memo(function AudioEngineHost() {
   const {
     currentTrack,
@@ -28,6 +30,9 @@ const AudioEngineHost = memo(function AudioEngineHost() {
     setAutoplayBlocked,
     setActiveEngine,
     setLastFallbackReason,
+    compatFallback,
+    setCompatFallback,
+    clearCompatFallback,
   } = useUiStore();
 
   const [, setViewportWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
@@ -42,6 +47,8 @@ const AudioEngineHost = memo(function AudioEngineHost() {
   const audioPlayerRef = useRef(null);
   const handlerRef = useRef(null);
   const mobileRetriedRef = useRef(false);
+  // Last playback position reported by the audio element, kept per video so it survives element resets on error
+  const lastTimeRef = useRef({ videoId: null, seconds: 0 });
 
   // Sync active engine to UI store for diagnostics display in Settings
   useEffect(() => {
@@ -72,6 +79,24 @@ const AudioEngineHost = memo(function AudioEngineHost() {
       setIsPlaying,
       showToast,
       pauseVideo: () => audioPlayerRef.current?.pauseVideo(),
+      // Unrecoverable <audio> failure (502 on load, 403 / stall mid-track): hand the same track to the
+      // YouTube IFrame at the same offset instead of skipping it.
+      onUnrecoverable: ({ videoId }) => {
+        if (!videoId) return false;
+        const player = audioPlayerRef.current;
+        const tracked = lastTimeRef.current;
+        const seconds =
+          tracked.videoId === videoId && tracked.seconds > 0
+            ? tracked.seconds
+            : player?.getCurrentTime?.() || 0;
+
+        player?.pauseVideo();
+        setCompatFallback({ videoId, seconds });
+        setLastFallbackReason(`Audio stream failed at ${Math.floor(seconds)}s • Compatibility mode (YouTube)`);
+        showToast?.(COMPAT_MODE_NOTICE);
+        setTemporaryEngineOverride('youtube');
+        return true;
+      },
       onEngineFallback: (errorCode, detail) => {
         const isMobile = isMobileDevice();
         if (isMobile) {
@@ -97,7 +122,14 @@ const AudioEngineHost = memo(function AudioEngineHost() {
         }
       },
     });
-  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, setTemporaryEngineOverride, setLastFallbackReason, currentTrack]);
+  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, setTemporaryEngineOverride, setLastFallbackReason, setCompatFallback, currentTrack]);
+
+  // Compatibility mode is per track: once the queue moves on, try the audio stream again
+  useEffect(() => {
+    if (compatFallback && currentTrack?.videoId && currentTrack.videoId !== compatFallback.videoId) {
+      clearCompatFallback();
+    }
+  }, [compatFallback, currentTrack, clearCompatFallback]);
 
   // Sync track ID with error count tracking and reset retry flag
   useEffect(() => {
@@ -133,6 +165,9 @@ const AudioEngineHost = memo(function AudioEngineHost() {
       });
 
       player.on('onTimeUpdate', (currentTime) => {
+        if (player.currentVideoId) {
+          lastTimeRef.current = { videoId: player.currentVideoId, seconds: currentTime };
+        }
         if (handlerRef.current) {
           handlerRef.current.handleTimeUpdate?.(currentTime);
         }

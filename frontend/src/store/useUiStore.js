@@ -14,6 +14,9 @@ export const useUiStore = create((set) => ({
   // Mobile / Background Engine Preferences: 'Auto' | 'Audio stream' | 'YouTube player'
   playbackEngine: (typeof localStorage !== 'undefined' && localStorage.getItem(ENGINE_STORAGE_KEY)) || 'Auto',
   temporaryEngineOverride: null,
+  // Set when the audio stream fails mid-track and playback is handed to the YouTube IFrame:
+  // { videoId, seconds } so the iframe can resume at the same offset.
+  compatFallback: null,
   activeEngine: 'audio',
   lastFallbackReason: null,
   isAutoplayBlocked: false,
@@ -25,10 +28,12 @@ export const useUiStore = create((set) => ({
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(ENGINE_STORAGE_KEY, engine);
     }
-    set({ playbackEngine: engine, temporaryEngineOverride: null });
+    set({ playbackEngine: engine, temporaryEngineOverride: null, compatFallback: null });
   },
 
   setTemporaryEngineOverride: (override) => set({ temporaryEngineOverride: override }),
+  setCompatFallback: (fallback) => set({ compatFallback: fallback }),
+  clearCompatFallback: () => set({ temporaryEngineOverride: null, compatFallback: null }),
   setAutoplayBlocked: (blocked) => set({ isAutoplayBlocked: blocked }),
 
   showToast: (message, duration = 3000) => {
