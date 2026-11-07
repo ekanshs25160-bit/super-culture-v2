@@ -4,10 +4,12 @@ import { LRUCache } from 'lru-cache';
 import { getPoToken } from './poTokenService.js';
 import { TrackMeta, StreamEntry, ArtistMeta, SearchResultPayload } from '../types/index.js';
 
-const CLIENT_ORDER = ['IOS', 'ANDROID', 'MWEB', 'MUSIC'] as const;
+const CLIENT_ORDER = ['TV_EMBEDDED', 'IOS', 'MWEB', 'MUSIC'] as const;
 
 export const getClientUserAgent = (clientName?: string): string => {
   switch (clientName) {
+    case 'TV_EMBEDDED':
+      return 'Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 NativeTV/5.0 TV Safari/538.1';
     case 'IOS':
       return 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)';
     case 'ANDROID':

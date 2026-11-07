@@ -83,11 +83,11 @@ async function probeRange(url, userAgent, range) {
 }
 
 const clientsToTest = [
+  { name: 'TV_EMBEDDED', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'TV_EMBEDDED' }) },
   { name: 'IOS', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'IOS' }) },
   { name: 'ANDROID', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'ANDROID' }) },
   { name: 'MWEB', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'MWEB' }) },
   { name: 'WEB', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'WEB' }) },
-  { name: 'TV_EMBED', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'TV_EMBEDDED' }) },
   { name: 'TV', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'TV' }) },
   { name: 'WEB_CREATOR', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'WEB_CREATOR' }) },
   { name: 'VISIONOS', fetchInfo: () => yt.getBasicInfo(videoId, { client: 'VISIONOS' }) },
