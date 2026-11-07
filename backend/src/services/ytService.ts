@@ -3,6 +3,21 @@ import { Innertube, UniversalCache, ClientType } from 'youtubei.js';
 import { LRUCache } from 'lru-cache';
 import { TrackMeta, StreamEntry, ArtistMeta, SearchResultPayload } from '../types/index.js';
 
+const CLIENT_ORDER = ['IOS', 'MWEB', 'MUSIC'] as const;
+
+export const getClientUserAgent = (clientName?: string): string => {
+  switch (clientName) {
+    case 'IOS':
+      return 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)';
+    case 'MWEB':
+      return 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+    case 'MUSIC':
+      return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+    default:
+      return 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)';
+  }
+};
+
 let ytInstance: Innertube | null = null;
 let ytInitPromise: Promise<Innertube> | null = null;
 
@@ -364,29 +379,13 @@ export class YouTubeService {
     return tracks;
   }
 
-  public async resolveAudioStream(videoId: string, prefer?: 'aac' | 'best'): Promise<StreamEntry> {
-    const cacheKey = `${videoId}:${prefer || 'best'}`;
-    const cached = this.streamCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached;
-    }
+  public invalidateStreamCache(videoId: string): void {
+    this.streamCache.delete(`${videoId}:aac`);
+    this.streamCache.delete(`${videoId}:best`);
+    this.streamCache.delete(videoId);
+  }
 
-    const client = await this.getClient();
-    let info: any;
-    try {
-      info = await client.getBasicInfo(videoId, { client: 'VISIONOS' });
-    } catch {
-      try {
-        info = await client.getBasicInfo(videoId, { client: 'IOS' });
-      } catch {
-        try {
-          info = await client.music.getInfo(videoId);
-        } catch {
-          info = await client.getInfo(videoId);
-        }
-      }
-    }
-
+  private pickFormat(info: any, prefer?: 'aac' | 'best'): any {
     let format: any;
     if (prefer === 'aac') {
       try {
@@ -413,39 +412,98 @@ export class YouTubeService {
     }
 
     if (!format) {
-      format = info.chooseFormat({
-        type: 'audio',
-        quality: 'best',
-      });
-    }
-
-    if (!format) {
-      throw new Error(`No compatible audio format found for video ${videoId}`);
-    }
-
-    let streamUrl = format.url;
-    if (!streamUrl && typeof format.decipher === 'function') {
       try {
-        streamUrl = await format.decipher(client.session.player);
-      } catch (decErr: any) {
-        console.warn(`[ytService] format.decipher failed for ${videoId}:`, decErr.message || decErr);
+        format = info.chooseFormat({
+          type: 'audio',
+          quality: 'best',
+        });
+      } catch {
+        // Fallback to choosing any audio adaptive format
       }
     }
 
-    if (!streamUrl) {
-      throw new Error(`Unable to decipher audio format for video ${videoId}`);
+    if (!format) {
+      const audioFormats = (info.streaming_data?.adaptive_formats || []).filter(
+        (f: any) => f.has_audio
+      );
+      if (audioFormats.length > 0) {
+        audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+        format = audioFormats[0];
+      }
     }
 
-    const entry: StreamEntry = {
-      videoId,
-      url: streamUrl,
-      mimeType: format.mime_type || 'audio/mp4',
-      bitrate: format.bitrate,
-      expiresAt: Date.now() + 1000 * 60 * 60 * 3.5,
-    };
+    return format;
+  }
 
-    this.streamCache.set(cacheKey, entry);
-    return entry;
+  private async probeStreamUrl(url: string, clientName: string): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': getClientUserAgent(clientName),
+          Range: 'bytes=0-1',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      return res.status === 200 || res.status === 206;
+    } catch (probeErr: any) {
+      console.warn(`[ytService] probe exception for ${clientName}:`, probeErr.message || probeErr);
+      return false;
+    }
+  }
+
+  public async resolveAudioStream(videoId: string, prefer?: 'aac' | 'best'): Promise<StreamEntry> {
+    const cacheKey = `${videoId}:${prefer || 'best'}`;
+    const cached = this.streamCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached;
+    }
+
+    const client = await this.getClient();
+
+    for (const name of CLIENT_ORDER) {
+      try {
+        const info = name === 'MUSIC'
+          ? await client.music.getInfo(videoId)
+          : await client.getBasicInfo(videoId, { client: name });
+
+        if (!info.streaming_data) {
+          console.warn(`[ytService] ${videoId}: ${name} gave no formats (${info.playability_status?.status}: ${info.playability_status?.reason ?? ''})`);
+          continue;
+        }
+
+        const format = this.pickFormat(info, prefer);
+        if (!format) {
+          console.warn(`[ytService] ${videoId}: ${name} had no compatible audio formats`);
+          continue;
+        }
+
+        const url = format.url ?? (typeof format.decipher === 'function' ? await format.decipher(client.session.player) : undefined);
+        if (!url || !(await this.probeStreamUrl(url, name))) {
+          console.warn(`[ytService] ${videoId}: ${name} stream probe failed or returned non-200/206 status`);
+          continue;
+        }
+
+        const entry: StreamEntry = {
+          videoId,
+          url,
+          client: name,
+          mimeType: format.mime_type || (prefer === 'aac' ? 'audio/mp4; codecs="mp4a.40.2"' : 'audio/mp4'),
+          bitrate: format.bitrate,
+          expiresAt: Date.now() + 1000 * 60 * 60 * 3.5,
+        };
+
+        this.streamCache.set(cacheKey, entry);
+        return entry;
+      } catch (e: any) {
+        console.warn(`[ytService] ${videoId}: ${name} failed: ${e.message}`);
+      }
+    }
+
+    throw new Error('No client returned a playable stream');
   }
 
   public async getUpNext(videoId: string): Promise<TrackMeta[]> {

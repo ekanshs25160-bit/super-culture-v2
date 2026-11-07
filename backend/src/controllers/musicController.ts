@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
-import { ytService, getArtistDiscography } from '../services/ytService.js';
+import { ytService, getArtistDiscography, getClientUserAgent } from '../services/ytService.js';
 import { cacheService, CacheService } from '../services/cacheService.js';
 import { createStreamToken, verifyStreamToken } from '../services/tokenService.js';
 import { TrackMeta, StreamEntry } from '../types/index.js';
@@ -142,34 +142,60 @@ export class MusicController {
       abortController.abort();
     });
 
-    let streamInfo: StreamEntry;
-    try {
-      streamInfo = await ytService.resolveAudioStream(videoId, prefer);
-    } catch (resolveError: any) {
-      console.error(`[MusicController] Stream resolution failed for ${videoId}:`, resolveError.message || resolveError);
-      res.status(502).json({
-        code: 'STREAM_UNAVAILABLE',
-        message: 'Unable to resolve audio stream for this track',
-      });
-      return;
-    }
-
-    try {
+    const fetchUpstream = async (info: StreamEntry) => {
       const range = req.headers.range;
       const upstreamHeaders: Record<string, string> = {
-        'User-Agent': 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)',
+        'User-Agent': getClientUserAgent(info.client),
       };
       if (range) {
         upstreamHeaders['Range'] = range;
       }
 
-      const response = await axios.get(streamInfo.url, {
+      return axios.get(info.url, {
         headers: upstreamHeaders,
         responseType: 'stream',
         signal: abortController.signal,
         validateStatus: (status) => status >= 200 && status < 400,
       });
+    };
 
+    let streamInfo: StreamEntry;
+    let response: any;
+
+    try {
+      streamInfo = await ytService.resolveAudioStream(videoId, prefer);
+      response = await fetchUpstream(streamInfo);
+    } catch (initialErr: any) {
+      if (axios.isCancel(initialErr) || abortController.signal.aborted) {
+        return;
+      }
+      console.warn(
+        `[MusicController] Initial upstream fetch failed for ${videoId} (${initialErr.message || initialErr}). Retrying once with fresh stream resolution...`
+      );
+      ytService.invalidateStreamCache(videoId);
+
+      try {
+        streamInfo = await ytService.resolveAudioStream(videoId, prefer);
+        response = await fetchUpstream(streamInfo);
+      } catch (retryErr: any) {
+        if (axios.isCancel(retryErr) || abortController.signal.aborted) {
+          return;
+        }
+        console.error(
+          `[MusicController] Stream resolution retry failed for ${videoId}:`,
+          retryErr.message || retryErr
+        );
+        if (!res.headersSent) {
+          res.status(502).json({
+            code: 'STREAM_UNAVAILABLE',
+            message: 'Unable to resolve audio stream for this track',
+          });
+        }
+        return;
+      }
+    }
+
+    try {
       res.status(response.status);
       res.setHeader('Content-Type', String(streamInfo.mimeType || response.headers['content-type'] || 'audio/mp4'));
       res.setHeader('Accept-Ranges', 'bytes');
@@ -196,14 +222,17 @@ export class MusicController {
         return;
       }
 
+      response.data.on('error', (streamErr: any) => {
+        console.warn(`[MusicController] Upstream stream pipe error for ${videoId}:`, streamErr.message || streamErr);
+        ytService.invalidateStreamCache(videoId);
+        if (response.data && typeof response.data.destroy === 'function') {
+          response.data.destroy();
+        }
+      });
+
       response.data.pipe(res);
     } catch (error: any) {
-      if (error.response?.status === 403) {
-        ytService.streamCache.delete(`${videoId}:${prefer}`);
-        ytService.streamCache.delete(`${videoId}:aac`);
-        ytService.streamCache.delete(`${videoId}:best`);
-        ytService.streamCache.delete(videoId);
-      }
+      ytService.invalidateStreamCache(videoId);
 
       if (axios.isCancel(error) || abortController.signal.aborted) {
         return;
@@ -228,7 +257,7 @@ export class MusicController {
       const upstreamRes = await axios.get(streamInfo.url, {
         headers: {
           Range: 'bytes=0-1',
-          'User-Agent': 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)',
+          'User-Agent': getClientUserAgent(streamInfo.client),
         },
         responseType: 'stream',
         validateStatus: () => true,

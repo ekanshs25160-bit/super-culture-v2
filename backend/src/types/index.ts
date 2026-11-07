@@ -42,6 +42,7 @@ export interface StreamEntry {
   mimeType: string;
   bitrate?: number;
   expiresAt: number;
+  client?: 'IOS' | 'MWEB' | 'MUSIC' | string;
 }
 
 export interface UserProfile {
