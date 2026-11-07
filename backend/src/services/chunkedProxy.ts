@@ -13,7 +13,7 @@ const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 100 });
  * translate every browser request into sequential bounded upstream requests and stitch the
  * results into ONE response. Seeking, Safari's probe requests and plain GETs all work.
  */
-export const CHUNK_SIZE = 1024 * 1024; // 1 MB per upstream request (10 MB was rejected by googlevideo with 403)
+export const CHUNK_SIZE = 1024 * 1024; // 1 MB: googlevideo 403s any range over ~1 MiB without a PO token
 
 export interface ServeChunkedOptions {
   mimeType?: string;
@@ -69,27 +69,34 @@ export async function serveChunked(
   opts: ServeChunkedOptions = {}
 ): Promise<void> {
   const { mimeType, headers = {}, signal } = opts;
+  // 1. Probe for total length first so large chunk ends can be clamped to the file size
+  const probe = await fetchChunk(upstreamUrl, 0, 1, headers, signal);
+  const total = parseTotal(probe.headers['content-range']);
+  probe.data.destroy();
+  if (total == null) throw new Error('Unable to determine content length from upstream');
+
+  // 2. Parse the browser range and clamp to total
   const range = parseRange(req.headers.range);
-
   let start = 0;
-  let reqEnd: number | null = null;
-  let total: number | null = null;
+  let reqEnd = total - 1;
 
-  if (range && range.start === null) {
-    // suffix range "bytes=-N": learn the total size first
-    const probe = await fetchChunk(upstreamUrl, 0, 0, headers, signal);
-    total = parseTotal(probe.headers['content-range']);
-    probe.data.destroy();
-    if (total == null) throw new Error('Unable to determine content length');
-    start = Math.max(0, total - (range.end as number));
-    reqEnd = total - 1;
-  } else if (range) {
-    start = range.start as number;
-    reqEnd = range.end;
+  if (range) {
+    if (range.start === null) {
+      start = Math.max(0, total - (range.end as number));
+    } else {
+      start = range.start;
+      if (range.end !== null) reqEnd = Math.min(range.end, total - 1);
+    }
   }
 
-  const firstEnd =
-    reqEnd !== null ? Math.min(reqEnd, start + CHUNK_SIZE - 1) : start + CHUNK_SIZE - 1;
+  if (start > total - 1) {
+    res.status(416).setHeader('Content-Range', `bytes */${total}`);
+    res.end();
+    return;
+  }
+
+  // 3. Clamp the first fetch chunk to the file boundary
+  const firstEnd = Math.min(reqEnd, start + CHUNK_SIZE - 1);
 
   let first: AxiosResponse<Readable>;
   try {
@@ -97,7 +104,7 @@ export async function serveChunked(
   } catch (err: any) {
     if (err?.response?.status === 416) {
       err.response.data?.destroy?.();
-      res.status(416).setHeader('Content-Range', `bytes */${total ?? '*'}`);
+      res.status(416).setHeader('Content-Range', `bytes */${total}`);
       res.end();
       return;
     }
@@ -117,20 +124,7 @@ export async function serveChunked(
     return;
   }
 
-  total = total ?? parseTotal(first.headers['content-range']);
-  if (total == null) {
-    first.data.destroy();
-    throw new Error('Upstream did not report total size');
-  }
-
-  if (start > total - 1) {
-    first.data.destroy();
-    res.status(416).setHeader('Content-Range', `bytes */${total}`);
-    res.end();
-    return;
-  }
-
-  const finalEnd = reqEnd !== null ? Math.min(reqEnd, total - 1) : total - 1;
+  const finalEnd = reqEnd;
   const length = finalEnd - start + 1;
 
   res.status(range ? 206 : 200);
