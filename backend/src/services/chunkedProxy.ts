@@ -1,6 +1,11 @@
 import axios, { AxiosResponse } from 'axios';
 import type { Request, Response } from 'express';
 import { Readable, pipeline } from 'node:stream';
+import http from 'http';
+import https from 'https';
+
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 100 });
 
 /**
  * Googlevideo URLs reject open-ended ("bytes=0-") and large Range requests with HTTP 403,
@@ -8,7 +13,7 @@ import { Readable, pipeline } from 'node:stream';
  * translate every browser request into sequential bounded upstream requests and stitch the
  * results into ONE response. Seeking, Safari's probe requests and plain GETs all work.
  */
-export const CHUNK_SIZE = 1024 * 1024; // 1 MB per upstream request
+export const CHUNK_SIZE = 1024 * 1024; // 1 MB per upstream request (10 MB was rejected by googlevideo with 403)
 
 export interface ServeChunkedOptions {
   mimeType?: string;
@@ -46,6 +51,8 @@ function fetchChunk(
     headers: { ...headers, Range: `bytes=${start}-${end}` },
     responseType: 'stream',
     signal,
+    httpAgent,
+    httpsAgent,
     validateStatus: (s) => s === 200 || s === 206,
   });
 }
@@ -162,7 +169,9 @@ export async function serveChunked(
     }
   }
 
-  pipeline(Readable.from(body()), res, () => {
-    /* client aborts and upstream errors end the response; nothing else to do */
+  pipeline(Readable.from(body()), res, (err: any) => {
+    if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+      console.error('[ChunkedProxy] Mid-stream pipeline error:', err.message);
+    }
   });
 }
