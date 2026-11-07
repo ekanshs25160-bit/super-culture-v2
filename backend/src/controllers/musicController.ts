@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
 import { ytService, getArtistDiscography, getClientUserAgent } from '../services/ytService.js';
+import { serveChunked } from '../services/chunkedProxy.js';
 import { cacheService, CacheService } from '../services/cacheService.js';
 import { createStreamToken, verifyStreamToken } from '../services/tokenService.js';
 import { TrackMeta, StreamEntry } from '../types/index.js';
@@ -142,41 +143,44 @@ export class MusicController {
       abortController.abort();
     });
 
-    const fetchUpstream = async (info: StreamEntry) => {
-      const range = req.headers.range;
-      const upstreamHeaders: Record<string, string> = {
-        'User-Agent': getClientUserAgent(info.client),
-      };
-      if (range) {
-        upstreamHeaders['Range'] = range;
-      }
-
-      return axios.get(info.url, {
-        headers: upstreamHeaders,
-        responseType: 'stream',
-        signal: abortController.signal,
-        validateStatus: (status) => status >= 200 && status < 400,
-      });
-    };
-
     let streamInfo: StreamEntry;
-    let response: any;
 
     try {
       streamInfo = await ytService.resolveAudioStream(videoId, prefer);
-      response = await fetchUpstream(streamInfo);
+      await serveChunked(req, res, streamInfo.url, {
+        mimeType: streamInfo.mimeType,
+        headers: {
+          'User-Agent': getClientUserAgent(streamInfo.client),
+        },
+        signal: abortController.signal,
+      });
     } catch (initialErr: any) {
       if (axios.isCancel(initialErr) || abortController.signal.aborted) {
         return;
       }
+      if (res.headersSent) {
+        console.warn(
+          `[MusicController] Error after headers sent for ${videoId}:`,
+          initialErr.message || initialErr
+        );
+        ytService.invalidateStreamCache(videoId);
+        return;
+      }
+
       console.warn(
-        `[MusicController] Initial upstream fetch failed for ${videoId} (${initialErr.message || initialErr}). Retrying once with fresh stream resolution...`
+        `[MusicController] Initial upstream stream failed for ${videoId} (${initialErr.message || initialErr}). Retrying once with fresh stream resolution...`
       );
       ytService.invalidateStreamCache(videoId);
 
       try {
         streamInfo = await ytService.resolveAudioStream(videoId, prefer);
-        response = await fetchUpstream(streamInfo);
+        await serveChunked(req, res, streamInfo.url, {
+          mimeType: streamInfo.mimeType,
+          headers: {
+            'User-Agent': getClientUserAgent(streamInfo.client),
+          },
+          signal: abortController.signal,
+        });
       } catch (retryErr: any) {
         if (axios.isCancel(retryErr) || abortController.signal.aborted) {
           return;
@@ -192,57 +196,6 @@ export class MusicController {
           });
         }
         return;
-      }
-    }
-
-    try {
-      res.status(response.status);
-      res.setHeader('Content-Type', String(streamInfo.mimeType || response.headers['content-type'] || 'audio/mp4'));
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Cache-Control', 'private, no-store');
-
-      if (response.headers['content-range']) {
-        res.setHeader('Content-Range', String(response.headers['content-range']));
-      }
-      if (response.headers['content-length']) {
-        res.setHeader('Content-Length', String(response.headers['content-length']));
-      }
-
-      req.on('close', () => {
-        if (response.data && typeof response.data.destroy === 'function') {
-          response.data.destroy();
-        }
-      });
-
-      if (req.method === 'HEAD') {
-        if (response.data && typeof response.data.destroy === 'function') {
-          response.data.destroy();
-        }
-        res.end();
-        return;
-      }
-
-      response.data.on('error', (streamErr: any) => {
-        console.warn(`[MusicController] Upstream stream pipe error for ${videoId}:`, streamErr.message || streamErr);
-        ytService.invalidateStreamCache(videoId);
-        if (response.data && typeof response.data.destroy === 'function') {
-          response.data.destroy();
-        }
-      });
-
-      response.data.pipe(res);
-    } catch (error: any) {
-      ytService.invalidateStreamCache(videoId);
-
-      if (axios.isCancel(error) || abortController.signal.aborted) {
-        return;
-      }
-      console.error(`[MusicController] Stream error for ${videoId}:`, error.message || error);
-      if (!res.headersSent) {
-        res.status(502).json({
-          code: 'STREAM_UNAVAILABLE',
-          message: 'Upstream audio stream could not be loaded',
-        });
       }
     }
   }
