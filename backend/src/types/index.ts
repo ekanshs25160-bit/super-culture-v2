@@ -43,6 +43,7 @@ export interface StreamEntry {
   bitrate?: number;
   expiresAt: number;
   client?: 'IOS' | 'MWEB' | 'MUSIC' | string;
+  throttled?: boolean;
 }
 
 export interface UserProfile {

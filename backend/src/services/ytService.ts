@@ -437,7 +437,10 @@ export class YouTubeService {
     return format;
   }
 
-  private async probeStreamUrl(url: string, clientName: string): Promise<boolean> {
+  public async probeStreamUrl(
+    url: string,
+    clientName: string
+  ): Promise<{ ok: boolean; throttled: boolean }> {
     try {
       const userAgent = getClientUserAgent(clientName);
       const controller = new AbortController();
@@ -452,16 +455,50 @@ export class YouTubeService {
       });
       clearTimeout(timeout);
 
-      // Only the fast 0-1 header probe gates client selection. Some tracks are capped by the CDN
-      // at ~1 MiB; those are handled client-side by falling back to the YouTube IFrame engine.
       if (res.status !== 200 && res.status !== 206) {
-        return false;
+        return { ok: false, throttled: false };
       }
 
-      return true;
+      try {
+        await res.arrayBuffer();
+      } catch {}
+
+      const contentRange = res.headers.get('content-range') || '';
+      const match = contentRange.match(/\/(\d+)$/);
+      const total = match ? parseInt(match[1], 10) : 0;
+
+      if (total > 1048600) {
+        const deepController = new AbortController();
+        const deepTimeout = setTimeout(() => deepController.abort(), 4000);
+        try {
+          const deepRes = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'User-Agent': userAgent,
+              Range: 'bytes=1048576-1048600',
+            },
+            signal: deepController.signal,
+          });
+          clearTimeout(deepTimeout);
+
+          try {
+            await deepRes.arrayBuffer();
+          } catch {}
+
+          if (deepRes.status === 206) {
+            return { ok: true, throttled: false };
+          }
+          return { ok: true, throttled: true };
+        } catch (_deepErr) {
+          clearTimeout(deepTimeout);
+          return { ok: true, throttled: true };
+        }
+      }
+
+      return { ok: true, throttled: false };
     } catch (probeErr: any) {
       console.warn(`[ytService] probe exception for ${clientName}:`, probeErr.message || probeErr);
-      return false;
+      return { ok: false, throttled: false };
     }
   }
 
@@ -473,6 +510,7 @@ export class YouTubeService {
     }
 
     const client = await this.getClient();
+    let fallbackThrottledEntry: StreamEntry | null = null;
 
     for (const name of CLIENT_ORDER) {
       try {
@@ -493,7 +531,12 @@ export class YouTubeService {
 
         const url = format.url ?? (typeof format.decipher === 'function' ? await format.decipher(client.session.player) : undefined);
 
-        if (!url || !(await this.probeStreamUrl(url, name))) {
+        if (!url) {
+          continue;
+        }
+
+        const probe = await this.probeStreamUrl(url, name);
+        if (!probe.ok) {
           console.warn(`[ytService] ${videoId}: ${name} stream probe failed or returned non-200/206 status`);
           continue;
         }
@@ -505,13 +548,25 @@ export class YouTubeService {
           mimeType: format.mime_type || (prefer === 'aac' ? 'audio/mp4; codecs="mp4a.40.2"' : 'audio/mp4'),
           bitrate: format.bitrate,
           expiresAt: Date.now() + 1000 * 60 * 60 * 3.5,
+          throttled: probe.throttled,
         };
 
-        this.streamCache.set(cacheKey, entry);
-        return entry;
+        if (!probe.throttled) {
+          this.streamCache.set(cacheKey, entry);
+          return entry;
+        }
+
+        if (!fallbackThrottledEntry) {
+          fallbackThrottledEntry = entry;
+        }
       } catch (e: any) {
         console.warn(`[ytService] ${videoId}: ${name} failed: ${e.message}`);
       }
+    }
+
+    if (fallbackThrottledEntry) {
+      this.streamCache.set(cacheKey, fallbackThrottledEntry);
+      return fallbackThrottledEntry;
     }
 
     throw new Error('No client returned a playable stream');

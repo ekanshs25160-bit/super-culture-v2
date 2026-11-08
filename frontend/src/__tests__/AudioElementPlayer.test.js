@@ -379,4 +379,36 @@ describe('AudioElementPlayer Unit Tests', () => {
     assert.equal(player.audio.currentTime, 0, 'Underlying element reset to 0');
     assert.equal(player.getCurrentTime(), 94.212765, 'getCurrentTime() must preserve the 94.212765s seek target');
   });
+
+  it('routes throttled streams directly to compatibility fallback at 0:00 without starting audio playback', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=throttled-token`,
+      throttled: true,
+    });
+
+    let fallbackPayload = null;
+    let throttledEventPayload = null;
+
+    player = new AudioElementPlayer({
+      onUnrecoverable: (payload) => {
+        fallbackPayload = payload;
+      },
+    });
+
+    player.on('onThrottled', (payload) => {
+      throttledEventPayload = payload;
+    });
+
+    await player.loadVideoById({ videoId: 'throttled-test-vid', startSeconds: 0 });
+
+    assert.equal(player.audio.src, '', 'Audio src must NOT be assigned for throttled tracks');
+    assert.equal(player.audio.paused, true, 'Audio element must NOT start playing');
+    assert.deepEqual(fallbackPayload, {
+      videoId: 'throttled-test-vid',
+      seconds: 0,
+      reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+    });
+    assert.deepEqual(throttledEventPayload, fallbackPayload);
+    assert.equal(player.hasRetried, true);
+  });
 });

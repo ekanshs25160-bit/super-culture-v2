@@ -141,4 +141,31 @@ describe('Compatibility-mode fallback (audio -> YouTube IFrame)', () => {
     assert.equal(useUiStore.getState().temporaryEngineOverride, 'youtube');
     assert.equal(getConsecutiveErrors(), 0);
   });
+
+  it('routes directly to YouTube compatibility mode at 0s when stream is flagged as throttled', () => {
+    const handleFallback = ({ videoId, seconds, reason }) => {
+      useUiStore.getState().setCompatFallback({ videoId, seconds });
+      useUiStore.getState().setTemporaryEngineOverride('youtube');
+      useUiStore.getState().setLastFallbackReason(reason);
+      return true;
+    };
+
+    const payload = {
+      videoId: 'throttled-track-abc',
+      seconds: 0,
+      reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+    };
+
+    handleFallback(payload);
+
+    assert.deepEqual(useUiStore.getState().compatFallback, {
+      videoId: 'throttled-track-abc',
+      seconds: 0,
+    });
+    assert.equal(useUiStore.getState().temporaryEngineOverride, 'youtube');
+    assert.equal(
+      useUiStore.getState().lastFallbackReason,
+      'Stream throttled by YouTube • Compatibility mode (YouTube)'
+    );
+  });
 });

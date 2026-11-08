@@ -105,7 +105,15 @@ export class MusicController {
       const preferParam = prefer === 'aac' ? '&prefer=aac' : '';
       const url = `/api/yt/stream/${videoId}?t=${encodeURIComponent(token)}${preferParam}`;
 
-      res.json({ url });
+      const streamInfo = await ytService.resolveAudioStream(
+        videoId,
+        prefer === 'aac' ? 'aac' : 'best'
+      );
+
+      res.json({
+        url,
+        throttled: Boolean(streamInfo.throttled),
+      });
     } catch (err: any) {
       console.error('[MusicController] stream-url generation error:', err.message);
       res.status(500).json({ error: 'Failed to generate signed stream URL', details: err.message });

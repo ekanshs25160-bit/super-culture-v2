@@ -6,7 +6,7 @@ import { resolveEffectiveEngine, isMobileDevice } from '../engine/PlayerConstant
 import { createPlaybackEventHandler } from '../engine/playbackEventHandler';
 import YouTubePlayer from './YouTubePlayer';
 
-export const COMPAT_MODE_NOTICE = 'Playing in compatibility mode (pauses when screen locks)';
+export const COMPAT_MODE_NOTICE = 'Compatibility mode: lock-screen and background playback are unavailable for this track.';
 
 const AudioEngineHost = memo(function AudioEngineHost() {
   const {
@@ -49,6 +49,35 @@ const AudioEngineHost = memo(function AudioEngineHost() {
   const mobileRetriedRef = useRef(false);
   // Last playback position reported by the audio element, kept per video so it survives element resets on error
   const lastTimeRef = useRef({ videoId: null, seconds: 0 });
+  const triggerFallbackRef = useRef(null);
+
+  triggerFallbackRef.current = ({ videoId, seconds, reason }) => {
+    if (!videoId) return false;
+    const player = audioPlayerRef.current;
+    const playerTime = player?.getCurrentTime?.() || 0;
+    const tracked = lastTimeRef.current;
+    const trackedTime = tracked.videoId === videoId && tracked.seconds > 0 ? tracked.seconds : 0;
+    const finalSeconds =
+      typeof seconds === 'number'
+        ? seconds
+        : playerTime > 0
+        ? playerTime
+        : trackedTime > 0
+        ? trackedTime
+        : currentTime || 0;
+
+    player?.pauseVideo();
+    setCompatFallback({ videoId, seconds: finalSeconds });
+    const fallbackReason =
+      reason ||
+      (finalSeconds > 0
+        ? `Audio stream failed at ${Math.floor(finalSeconds)}s • Compatibility mode (YouTube)`
+        : 'Stream throttled by YouTube • Compatibility mode (YouTube)');
+    setLastFallbackReason(fallbackReason);
+    showToast?.(COMPAT_MODE_NOTICE);
+    setTemporaryEngineOverride('youtube');
+    return true;
+  };
 
   // Sync active engine to UI store for diagnostics display in Settings
   useEffect(() => {
@@ -79,22 +108,10 @@ const AudioEngineHost = memo(function AudioEngineHost() {
       setIsPlaying,
       showToast,
       pauseVideo: () => audioPlayerRef.current?.pauseVideo(),
-      // Unrecoverable <audio> failure (502 on load, 403 / stall mid-track): hand the same track to the
-      // YouTube IFrame at the same offset instead of skipping it.
-      onUnrecoverable: ({ videoId }) => {
-        if (!videoId) return false;
-        const player = audioPlayerRef.current;
-        const playerTime = player?.getCurrentTime?.() || 0;
-        const tracked = lastTimeRef.current;
-        const trackedTime = tracked.videoId === videoId && tracked.seconds > 0 ? tracked.seconds : 0;
-        const seconds = playerTime > 0 ? playerTime : trackedTime > 0 ? trackedTime : currentTime || 0;
-
-        player?.pauseVideo();
-        setCompatFallback({ videoId, seconds });
-        setLastFallbackReason(`Audio stream failed at ${Math.floor(seconds)}s • Compatibility mode (YouTube)`);
-        showToast?.(COMPAT_MODE_NOTICE);
-        setTemporaryEngineOverride('youtube');
-        return true;
+      // Unrecoverable <audio> failure (502 on load, 403 / stall mid-track, or throttled upstream):
+      // hand the same track to the YouTube IFrame at the specified offset instead of skipping it.
+      onUnrecoverable: (payload) => {
+        return triggerFallbackRef.current?.(payload);
       },
       onEngineFallback: (errorCode, detail) => {
         const isMobile = isMobileDevice();
@@ -121,7 +138,7 @@ const AudioEngineHost = memo(function AudioEngineHost() {
         }
       },
     });
-  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, setTemporaryEngineOverride, setLastFallbackReason, setCompatFallback, currentTrack]);
+  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, currentTrack]);
 
   // Compatibility mode is per track: once the queue moves on, try the audio stream again
   useEffect(() => {
@@ -148,8 +165,18 @@ const AudioEngineHost = memo(function AudioEngineHost() {
     }
 
     if (!audioPlayerRef.current) {
-      const player = new AudioElementPlayer();
+      const player = new AudioElementPlayer({
+        onUnrecoverable: (payload) => triggerFallbackRef.current?.(payload),
+      });
       audioPlayerRef.current = player;
+
+      player.on('onThrottled', (payload) => {
+        triggerFallbackRef.current?.(payload);
+      });
+
+      player.on('onUnrecoverable', (payload) => {
+        triggerFallbackRef.current?.(payload);
+      });
 
       player.on('onStateChange', (state) => {
         if (handlerRef.current) {

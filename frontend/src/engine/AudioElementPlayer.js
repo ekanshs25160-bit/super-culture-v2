@@ -206,9 +206,11 @@ export class AudioElementPlayer {
     }
 
     try {
-      const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
-      const resolved = resolveAudioUrl(url);
-      this.urlCache.set(videoId, { url: resolved, timestamp: Date.now() });
+      const data = await apiClient.music.getStreamUrl(videoId, 'aac');
+      const rawUrl = data?.url || (typeof data === 'string' ? data : '');
+      const resolved = resolveAudioUrl(rawUrl);
+      const throttled = Boolean(data?.throttled);
+      this.urlCache.set(videoId, { url: resolved, throttled, timestamp: Date.now() });
       return resolved;
     } catch (err) {
       console.warn(`[AudioElementPlayer] prepareTrack failed for ${videoId}:`, err);
@@ -271,12 +273,14 @@ export class AudioElementPlayer {
         if (token !== this.loadToken) return;
 
         let targetSrc = offlineBlobUrl;
+        let isThrottled = false;
 
         // 2. Check in-memory URL cache for instant screen-off transition
         if (!targetSrc) {
           const cached = this.urlCache.get(videoId);
           if (cached && Date.now() - cached.timestamp < 100 * 60 * 1000) {
             targetSrc = cached.url;
+            isThrottled = Boolean(cached.throttled);
           }
         }
 
@@ -284,6 +288,33 @@ export class AudioElementPlayer {
         if (!targetSrc) {
           targetSrc = await this.prepareTrack(videoId);
           if (token !== this.loadToken) return;
+          const cached = this.urlCache.get(videoId);
+          if (cached) {
+            isThrottled = Boolean(cached.throttled);
+          }
+        }
+
+        if (token !== this.loadToken) return;
+
+        // If upstream stream is subject to the 1 MiB PO cap, route immediately to YouTube compatibility player at 0s
+        if (isThrottled) {
+          console.log(`[AudioElementPlayer] Stream for ${videoId} is throttled upstream (>1 MiB PO cap). Routing to YouTube compatibility player at 0s...`);
+          this.state = PlayerState.UNSTARTED;
+          this.hasRetried = true;
+          this._lastKnownTime = Math.max(0, Number(startSeconds) || 0);
+
+          const fallbackPayload = {
+            videoId,
+            seconds: this._lastKnownTime,
+            reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+          };
+
+          if (typeof this.options?.onUnrecoverable === 'function') {
+            this.options.onUnrecoverable(fallbackPayload);
+          }
+          this.emit('onThrottled', fallbackPayload);
+          this.emit('onUnrecoverable', fallbackPayload);
+          return;
         }
 
         if (!targetSrc) {
@@ -369,13 +400,33 @@ export class AudioElementPlayer {
 
     try {
       let targetSrc = offlineBlobUrl;
+      let isThrottled = false;
       if (!targetSrc) {
         const cached = this.urlCache.get(videoId);
         if (cached && Date.now() - cached.timestamp < 100 * 60 * 1000) {
           targetSrc = cached.url;
+          isThrottled = Boolean(cached.throttled);
         } else {
           targetSrc = await this.prepareTrack(videoId);
+          const fresh = this.urlCache.get(videoId);
+          if (fresh) {
+            isThrottled = Boolean(fresh.throttled);
+          }
         }
+      }
+
+      if (isThrottled) {
+        const fallbackPayload = {
+          videoId,
+          seconds: Math.max(0, Number(startSeconds) || 0),
+          reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+        };
+        if (typeof this.options?.onUnrecoverable === 'function') {
+          this.options.onUnrecoverable(fallbackPayload);
+        }
+        this.emit('onThrottled', fallbackPayload);
+        this.emit('onUnrecoverable', fallbackPayload);
+        return;
       }
 
       this.currentSrc = targetSrc;

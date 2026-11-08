@@ -19,6 +19,20 @@
 
 ---
 
+## 🎵 Playback Modes & Known Limitations
+
+Super Culture employs an intelligent dual-engine audio pipeline designed to maximize playback reliability across web and mobile platforms:
+
+- **Native `<audio>` Engine (Standard)**:
+  - Streams audio via the high-performance HTML5 `<audio>` element with backend byte-range proxying.
+  - Supports full background playback, screen-off listening, mobile lock-screen Media Session controls (album art, play/pause, seek, track skip), and fast byte-range seeking.
+- **YouTube IFrame Compatibility Mode**:
+  - Automatically activates when upstream audio streams are restricted by YouTube's 1 MiB Proof-of-Origin (PO) token cap (or on unexpected network drops).
+  - The backend classifies throttled streams during resolution and routes them directly to the headless YouTube IFrame player starting at `0:00`, preventing mid-song cutoffs.
+  - **Known Limitation**: Due to browser restrictions on background iframe execution, **lock-screen and background playback are unavailable** while compatibility mode is active (the device screen must stay awake).
+
+---
+
 ## 📋 Prerequisites
 
 - **Node.js**: `v18.0.0` or higher (Node 20+ recommended) and `npm`
