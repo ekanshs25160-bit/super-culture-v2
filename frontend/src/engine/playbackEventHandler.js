@@ -35,6 +35,7 @@ export const createPlaybackEventHandler = ({
   onEngineFallback,
   pauseVideo,
   retryStream,
+  onUnrecoverable,
 } = {}) => {
   let currentVideoId = null;
   let lastPlayerInstance = null;
@@ -70,6 +71,21 @@ export const createPlaybackEventHandler = ({
     }
 
     const triggerDelayedSkip = () => {
+      // Give the host a chance to hand the track to another engine (e.g. YouTube IFrame)
+      // before giving up on it and skipping.
+      if (typeof onUnrecoverable === 'function') {
+        let handled = false;
+        try {
+          handled = onUnrecoverable({ videoId: currentVideoId, error: e, player }) === true;
+        } catch (fallbackErr) {
+          console.warn('[PlaybackEventHandler] onUnrecoverable failed:', fallbackErr);
+        }
+        if (handled) {
+          // A different engine now owns this track; don't let this failure trip the circuit breaker.
+          consecutiveErrors = 0;
+          return;
+        }
+      }
       showToast?.('Track unavailable or restricted • Skipping to next...');
       setTimeout(() => {
         const skipNext = getSkipNext?.();
@@ -82,8 +98,9 @@ export const createPlaybackEventHandler = ({
       }, 500);
     };
 
-    // If < 3, retry the stream once. If the retry fails, call skipNext(1) with 500ms delay
-    const canRetry = currentVideoId && !retriedTracks.has(currentVideoId);
+    // If < 3, retry the stream once (unless the player already exhausted its internal URL refresh).
+    // If the retry fails, call triggerDelayedSkip() (which invokes onUnrecoverable first).
+    const canRetry = currentVideoId && !retriedTracks.has(currentVideoId) && !player?.hasRetried;
     if (canRetry) {
       retriedTracks.add(currentVideoId);
 
@@ -102,10 +119,16 @@ export const createPlaybackEventHandler = ({
       }
 
       if (retryPromise && typeof retryPromise.then === 'function') {
-        retryPromise.catch((retryErr) => {
-          console.warn('[PlaybackEventHandler] Retry stream failed:', retryErr);
-          triggerDelayedSkip();
-        });
+        retryPromise
+          .then((recovered) => {
+            if (recovered === false) {
+              triggerDelayedSkip();
+            }
+          })
+          .catch((retryErr) => {
+            console.warn('[PlaybackEventHandler] Retry stream failed:', retryErr);
+            triggerDelayedSkip();
+          });
         return;
       }
     }

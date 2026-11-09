@@ -1,6 +1,9 @@
 import { PlayerState } from './PlayerConstants.js';
 import { apiClient, API_BASE } from '../services/api.js';
 
+// Signed stream tokens live 2h; keep preloaded URLs well inside that window
+const PRELOAD_MAX_AGE_MS = 90 * 60 * 1000;
+
 export const resolveAudioUrl = (url) => {
   if (!url) return '';
   if (url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
@@ -24,12 +27,21 @@ export class AudioElementPlayer {
     this.currentVideoId = null;
     this.currentSrc = null;
     this.currentBlobUrl = null;
+    this.cuedOnly = false;
     this.hasRetried = false;
+    this.isRefreshing = false;
+    this.userPaused = false;
+    this._lastKnownTime = 0;
     this.volume = 0.74;
     this.urlCache = new Map(); // videoId -> { url, timestamp }
     this.loadPromise = null;
     this.loadToken = 0;
+    // Next-track stream URL resolved ahead of time so the ended -> src -> play() chain needs no network await
+    this._preloadedNext = { videoId: null, url: null };
+    this._preloadInflight = null;
     this.errorReportedFor = null;
+    this.unlocked = false;
+    this.isUnlocking = false;
 
     this.initAudioElement();
   }
@@ -58,14 +70,53 @@ export class AudioElementPlayer {
     }
   }
 
+  /**
+   * One-time user gesture audio unlock for Mobile Safari and WebView autoplay restrictions.
+   * Called synchronously at the start of a user tap handler before any async/await operations.
+   */
+  unlock() {
+    this.initAudioElement();
+    if (this.unlocked || !this.audio) return;
+    this.unlocked = true;
+    this.isUnlocking = true;
+
+    try {
+      // Tiny valid silent WAV (4-byte 16-bit PCM mono silence) to bless the audio element
+      this.audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAA';
+      const playPromise = this.audio.play();
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise
+          .then(() => {
+            if (this.audio && this.audio.src && this.audio.src.startsWith('data:audio')) {
+              this.audio.pause();
+            }
+            this.isUnlocking = false;
+          })
+          .catch(() => {
+            this.isUnlocking = false;
+          });
+      } else {
+        if (this.audio && this.audio.src && this.audio.src.startsWith('data:audio')) {
+          this.audio.pause();
+        }
+        this.isUnlocking = false;
+      }
+    } catch {
+      this.isUnlocking = false;
+    }
+  }
+
   attachEventListeners(audio) {
     audio.addEventListener('playing', () => {
+      if (audio.src?.startsWith('data:audio')) return;
+      this.isUnlocking = false;
       this.state = PlayerState.PLAYING;
       this.emit('onPlaying');
       this.emit('onStateChange', PlayerState.PLAYING);
     });
 
     audio.addEventListener('pause', () => {
+      if (audio.src?.startsWith('data:audio')) return;
       // Avoid firing paused when playback naturally ended
       if (this.state !== PlayerState.ENDED) {
         this.state = PlayerState.PAUSED;
@@ -75,26 +126,35 @@ export class AudioElementPlayer {
     });
 
     audio.addEventListener('waiting', () => {
+      if (audio.src?.startsWith('data:audio')) return;
       this.state = PlayerState.BUFFERING;
       this.emit('onBuffering');
       this.emit('onStateChange', PlayerState.BUFFERING);
     });
 
     audio.addEventListener('ended', () => {
+      if (audio.src?.startsWith('data:audio')) return;
+      this._lastKnownTime = 0;
       this.state = PlayerState.ENDED;
       this.emit('onEnded');
       this.emit('onStateChange', PlayerState.ENDED);
     });
 
     audio.addEventListener('timeupdate', () => {
+      if (audio.src?.startsWith('data:audio')) return;
+      if (audio.currentTime > 0 && !this.isRefreshing) {
+        this._lastKnownTime = audio.currentTime;
+      }
       this.emit('onTimeUpdate', audio.currentTime, audio.duration);
     });
 
     audio.addEventListener('error', (e) => {
+      if (audio.src?.startsWith('data:audio')) return;
       this.handleAudioError(e);
     });
 
     audio.addEventListener('stalled', () => {
+      if (audio.src?.startsWith('data:audio')) return;
       this.handleStreamStall();
     });
   }
@@ -132,6 +192,10 @@ export class AudioElementPlayer {
     if (this.errorReportedFor === targetId) {
       return;
     }
+    if (this.audio && this.audio.currentTime > 0) {
+      this._lastKnownTime = this.audio.currentTime;
+    }
+    this.hasRetried = true;
     this.errorReportedFor = targetId;
     this.state = PlayerState.UNSTARTED;
     this.emit('onError', code, err);
@@ -149,13 +213,126 @@ export class AudioElementPlayer {
     }
 
     try {
-      const { url } = await apiClient.music.getStreamUrl(videoId, 'aac');
-      const resolved = resolveAudioUrl(url);
-      this.urlCache.set(videoId, { url: resolved, timestamp: Date.now() });
+      const data = await apiClient.music.getStreamUrl(videoId, 'aac');
+      const rawUrl = data?.url || (typeof data === 'string' ? data : '');
+      const resolved = resolveAudioUrl(rawUrl);
+      const throttled = Boolean(data?.throttled || data?.code === 'STREAM_LIMITED');
+      const reason = data?.reason || null;
+      this.urlCache.set(videoId, { url: resolved, throttled, reason, timestamp: Date.now() });
       return resolved;
     } catch (err) {
       console.warn(`[AudioElementPlayer] prepareTrack failed for ${videoId}:`, err);
       return null;
+    }
+  }
+
+  /**
+   * Resolves the signed stream URL (and offline blob, if saved) for the upcoming track in the background
+   * so loadVideoById() can assign src and call play() synchronously when the current track ends.
+   */
+  async preloadNextStreamUrl(videoId) {
+    if (!videoId || videoId === this.currentVideoId) return null;
+
+    const existing = this._preloadedNext;
+    if (
+      existing.videoId === videoId &&
+      existing.url &&
+      Date.now() - (existing.timestamp || 0) < PRELOAD_MAX_AGE_MS
+    ) {
+      return existing.url;
+    }
+    if (this._preloadInflight?.videoId === videoId) {
+      return this._preloadInflight.promise;
+    }
+
+    const promise = (async () => {
+      try {
+        let url = null;
+        let isBlob = false;
+        let throttled = false;
+        let reason = null;
+
+        if (typeof caches !== 'undefined') {
+          try {
+            const cache = await caches.open('sc-offline-audio');
+            const match = await cache.match(`/offline-audio/${videoId}`);
+            const blob = match ? await match.blob() : null;
+            if (blob && blob.size > 0) {
+              url = URL.createObjectURL(blob);
+              isBlob = true;
+            }
+          } catch (cacheErr) {
+            void cacheErr;
+          }
+        }
+
+        if (!url) {
+          const data = await apiClient.music.getStreamUrl(videoId, 'aac');
+          const rawUrl = data?.url || (typeof data === 'string' ? data : '');
+          url = resolveAudioUrl(rawUrl);
+          throttled = Boolean(data?.throttled || data?.code === 'STREAM_LIMITED');
+          reason = data?.reason || null;
+          if (url) {
+            this.urlCache.set(videoId, { url, throttled, reason, timestamp: Date.now() });
+          }
+        }
+
+        if (!url) return null;
+        this._clearPreloadedNext();
+        this._preloadedNext = { videoId, url, isBlob, throttled, reason, timestamp: Date.now() };
+        return url;
+      } catch (err) {
+        console.debug('[AudioElementPlayer] preloadNextStreamUrl skipped:', err?.message);
+        return null;
+      } finally {
+        if (this._preloadInflight?.videoId === videoId) {
+          this._preloadInflight = null;
+        }
+      }
+    })();
+
+    this._preloadInflight = { videoId, promise };
+    return promise;
+  }
+
+  _clearPreloadedNext({ revoke = true } = {}) {
+    const prev = this._preloadedNext;
+    if (revoke && prev?.isBlob && prev.url) {
+      try {
+        URL.revokeObjectURL(prev.url);
+      } catch (revokeErr) {
+        void revokeErr;
+      }
+    }
+    this._preloadedNext = { videoId: null, url: null };
+  }
+
+  /**
+   * Assigns src and starts playback. Everything before audio.play() is synchronous.
+   */
+  async _applySrcAndPlay({ token, targetSrc, startSeconds, videoId }) {
+    this.currentSrc = targetSrc;
+    this.isUnlocking = false;
+
+    if (!this.audio) return;
+    this.audio.src = targetSrc;
+    this.audio.currentTime = startSeconds || 0;
+    if (token !== this.loadToken) return;
+    try {
+      await this.audio.play();
+    } catch (playErr) {
+      if (token !== this.loadToken) return;
+      if (playErr?.name === 'NotAllowedError') {
+        console.warn('[AudioElementPlayer] Autoplay blocked by user-gesture policy.');
+        this.emit('onAutoplayBlocked');
+      } else if (playErr?.name === 'AbortError' && (this.userPaused || this.isRefreshing) && !this.audio?.error) {
+        // Interrupted by explicit user pause or in-flight URL refresh
+      } else if (!this.hasRetried && !this.isRefreshing) {
+        await this.handleStreamStall();
+      } else {
+        console.warn('[AudioElementPlayer] loadVideoById play error:', playErr);
+        this.reportError(100, playErr, videoId);
+      }
     }
   }
 
@@ -169,7 +346,11 @@ export class AudioElementPlayer {
     if (!videoId) return;
 
     this.currentVideoId = videoId;
+    this.cuedOnly = false;
     this.hasRetried = false;
+    this.isRefreshing = false;
+    this.userPaused = false;
+    this._lastKnownTime = Math.max(0, Number(startSeconds) || 0);
     this.state = PlayerState.BUFFERING;
     this.emit('onBuffering');
     this.emit('onStateChange', PlayerState.BUFFERING);
@@ -184,6 +365,37 @@ export class AudioElementPlayer {
         void _revokeErr;
       }
       this.currentBlobUrl = null;
+    }
+
+    // Synchronous fast-path: next-track URL was pre-resolved, so no network await may precede src/play().
+    const pre = this._preloadedNext;
+    if (
+      pre.videoId === videoId &&
+      pre.url &&
+      !pre.throttled &&
+      Date.now() - (pre.timestamp || 0) < PRELOAD_MAX_AGE_MS
+    ) {
+      this._preloadedNext = { videoId: null, url: null };
+      if (pre.isBlob) {
+        this.currentBlobUrl = pre.url;
+      }
+      const fastTask = this._applySrcAndPlay({ token, targetSrc: pre.url, startSeconds, videoId })
+        .catch((err) => {
+          if (token !== this.loadToken) return;
+          console.error('[AudioElementPlayer] Failed to start preloaded stream:', err);
+          this.reportError(100, err, videoId);
+        })
+        .finally(() => {
+          if (this.loadToken === token) {
+            this.loadPromise = null;
+          }
+        });
+      this.loadPromise = fastTask;
+      return fastTask;
+    }
+    if (pre.videoId === videoId) {
+      // Stale or throttled preload: drop it and take the normal slow path
+      this._clearPreloadedNext();
     }
 
     const loadTask = (async () => {
@@ -211,45 +423,55 @@ export class AudioElementPlayer {
         if (token !== this.loadToken) return;
 
         let targetSrc = offlineBlobUrl;
+        let isThrottled = false;
 
         // 2. Check in-memory URL cache for instant screen-off transition
         if (!targetSrc) {
           const cached = this.urlCache.get(videoId);
           if (cached && Date.now() - cached.timestamp < 100 * 60 * 1000) {
             targetSrc = cached.url;
+            isThrottled = Boolean(cached.throttled);
           }
         }
 
         // 3. Fallback to network request if not pre-cached
-        if (!targetSrc) {
+        if (!targetSrc && !isThrottled) {
           targetSrc = await this.prepareTrack(videoId);
           if (token !== this.loadToken) return;
+          const cached = this.urlCache.get(videoId);
+          if (cached) {
+            isThrottled = Boolean(cached.throttled);
+          }
+        }
+
+        if (token !== this.loadToken) return;
+
+        // If upstream stream is subject to the 1 MiB PO cap, route immediately to YouTube compatibility player at 0s
+        if (isThrottled) {
+          console.log(`[AudioElementPlayer] Stream for ${videoId} is throttled upstream (>1 MiB PO cap). Routing to YouTube compatibility player at 0s...`);
+          this.state = PlayerState.UNSTARTED;
+          this.hasRetried = true;
+          this._lastKnownTime = Math.max(0, Number(startSeconds) || 0);
+
+          const fallbackPayload = {
+            videoId,
+            seconds: this._lastKnownTime,
+            reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+          };
+
+          if (typeof this.options?.onUnrecoverable === 'function') {
+            this.options.onUnrecoverable(fallbackPayload);
+          }
+          this.emit('onThrottled', fallbackPayload);
+          this.emit('onUnrecoverable', fallbackPayload);
+          return;
         }
 
         if (!targetSrc) {
           throw new Error('Failed to resolve audio stream source');
         }
 
-        this.currentSrc = targetSrc;
-
-        if (this.audio) {
-          this.audio.src = targetSrc;
-          this.audio.currentTime = startSeconds || 0;
-          if (token !== this.loadToken) return;
-          try {
-            await this.audio.play();
-          } catch (playErr) {
-            if (token !== this.loadToken) return;
-            if (playErr.name === 'NotAllowedError') {
-              console.warn('[AudioElementPlayer] Autoplay blocked by user-gesture policy.');
-              this.emit('onAutoplayBlocked');
-            } else {
-              console.warn('[AudioElementPlayer] loadVideoById play error:', playErr);
-              this.reportError(100, playErr, videoId);
-            }
-          }
-          if (token !== this.loadToken) return;
-        }
+        await this._applySrcAndPlay({ token, targetSrc, startSeconds, videoId });
       } catch (err) {
         if (token !== this.loadToken) return;
         console.error('[AudioElementPlayer] Failed to load stream URL:', err);
@@ -265,80 +487,63 @@ export class AudioElementPlayer {
     return loadTask;
   }
 
-  async cueVideoById({ videoId, startSeconds = 0 }) {
+  async cueVideoById({ videoId, startSeconds = 0 } = {}) {
+    if (!videoId) return;
     this.currentVideoId = videoId;
+    this._lastKnownTime = Math.max(0, Number(startSeconds) || 0);
+    this.cuedOnly = true;
     this.hasRetried = false;
+    this.isRefreshing = false;
+    this.userPaused = true;
     this.state = PlayerState.CUED;
     this.emit('onStateChange', PlayerState.CUED);
-
-    this.initAudioElement();
-
-    if (this.currentBlobUrl) {
-      try {
-        URL.revokeObjectURL(this.currentBlobUrl);
-      } catch (_revokeErr) {
-        void _revokeErr;
-      }
-      this.currentBlobUrl = null;
-    }
-
-    let offlineBlobUrl = null;
-    if (typeof caches !== 'undefined') {
-      try {
-        const cache = await caches.open('sc-offline-audio');
-        const match = await cache.match(`/offline-audio/${videoId}`);
-        if (match) {
-          const blob = await match.blob();
-          if (blob && blob.size > 0) {
-            offlineBlobUrl = URL.createObjectURL(blob);
-            this.currentBlobUrl = offlineBlobUrl;
-          }
-        }
-      } catch (_cacheErr) {
-        void _cacheErr;
-      }
-    }
-
-    try {
-      let targetSrc = offlineBlobUrl;
-      if (!targetSrc) {
-        const cached = this.urlCache.get(videoId);
-        if (cached && Date.now() - cached.timestamp < 100 * 60 * 1000) {
-          targetSrc = cached.url;
-        } else {
-          targetSrc = await this.prepareTrack(videoId);
-        }
-      }
-
-      this.currentSrc = targetSrc;
-      if (this.audio && targetSrc) {
-        this.audio.src = targetSrc;
-        if (startSeconds > 0) {
-          this.audio.currentTime = startSeconds;
-        }
-      }
-    } catch (err) {
-      console.warn('[AudioElementPlayer] Failed to cue stream URL:', err);
-    }
   }
 
   async playVideo() {
+    this.initAudioElement();
     if (!this.audio) return;
+
+    const needsInitialLoad =
+      this.cuedOnly ||
+      ((!this.audio.src || this.audio.src.startsWith('data:audio')) &&
+        Boolean(this.currentVideoId) &&
+        !this.loadPromise);
+
+    if (needsInitialLoad && this.currentVideoId) {
+      this.cuedOnly = false;
+      return this.loadVideoById({
+        videoId: this.currentVideoId,
+        startSeconds: this._lastKnownTime || 0,
+      });
+    }
+
+    this.userPaused = false;
 
     try {
       if (this.loadPromise) {
         await this.loadPromise;
       }
 
-      if (this.audio.error || !this.audio.src) {
+      if (this.userPaused || !this.audio.src || this.audio.src.startsWith('data:audio')) {
+        return;
+      }
+
+      if (this.audio.error) {
+        if (!this.hasRetried && !this.isRefreshing && this.currentVideoId) {
+          await this.handleStreamStall();
+        } else {
+          this.reportError(100, this.audio.error, this.currentVideoId);
+        }
         return;
       }
 
       await this.audio.play();
     } catch (err) {
-      if (err.name === 'NotAllowedError') {
+      if (err?.name === 'NotAllowedError') {
         console.warn('[AudioElementPlayer] Autoplay blocked by user-gesture policy.');
         this.emit('onAutoplayBlocked');
+      } else if (err?.name === 'AbortError' && (this.userPaused || this.isRefreshing) && !this.audio?.error) {
+        // Interrupted by explicit user pause or in-flight URL refresh
       } else {
         console.warn('[AudioElementPlayer] playVideo error:', err);
         this.reportError(100, err, this.currentVideoId);
@@ -347,6 +552,7 @@ export class AudioElementPlayer {
   }
 
   pauseVideo() {
+    this.userPaused = true;
     if (this.audio) {
       this.audio.pause();
     }
@@ -355,6 +561,10 @@ export class AudioElementPlayer {
   stopVideo() {
     this.loadToken++;
     this.loadPromise = null;
+    this.cuedOnly = false;
+    this.userPaused = true;
+    this.isRefreshing = false;
+    this._lastKnownTime = 0;
     if (this.audio) {
       this.audio.pause();
       this.audio.currentTime = 0;
@@ -363,9 +573,13 @@ export class AudioElementPlayer {
   }
 
   seekTo(seconds) {
-    if (!this.audio) return;
+    const target = Math.max(0, Number(seconds) || 0);
+    this._lastKnownTime = target;
+    if (this.cuedOnly || !this.audio || this.audio.src?.startsWith('data:audio')) {
+      return;
+    }
     try {
-      this.audio.currentTime = seconds;
+      this.audio.currentTime = target;
     } catch (err) {
       console.warn('[AudioElementPlayer] Seek error:', err);
     }
@@ -386,7 +600,12 @@ export class AudioElementPlayer {
   }
 
   getCurrentTime() {
-    return this.audio ? this.audio.currentTime || 0 : 0;
+    const audioTime = this.audio ? this.audio.currentTime || 0 : 0;
+    if (audioTime > 0) {
+      this._lastKnownTime = audioTime;
+      return audioTime;
+    }
+    return this._lastKnownTime || 0;
   }
 
   getDuration() {
@@ -430,39 +649,67 @@ export class AudioElementPlayer {
    * Recover from stream stalls or token expiry (HTTP 410) by re-requesting stream URL once
    */
   async handleStreamStall() {
-    if (this.hasRetried || !this.currentVideoId) return;
+    if (this.hasRetried || this.isRefreshing || !this.currentVideoId) return false;
     this.hasRetried = true;
+    this.isRefreshing = true;
 
+    const videoId = this.currentVideoId;
     const resumeTime = this.getCurrentTime();
-    console.log(`[AudioElementPlayer] Stream stalled or token expired. Refreshing signed URL for ${this.currentVideoId} at ${resumeTime}s...`);
+    if (resumeTime > 0) {
+      this._lastKnownTime = resumeTime;
+    }
+    console.log(`[AudioElementPlayer] Stream stalled or token expired. Refreshing signed URL for ${videoId} at ${resumeTime}s...`);
 
     // Invalidate cached URL so fresh HMAC token is fetched
-    this.urlCache.delete(this.currentVideoId);
+    this.urlCache.delete(videoId);
 
     try {
-      const freshUrl = await this.prepareTrack(this.currentVideoId);
+      const freshUrl = await this.prepareTrack(videoId);
+      if (this.currentVideoId !== videoId) return false;
       if (!freshUrl) {
         throw new Error('Could not refresh stream URL');
       }
+
       this.currentSrc = freshUrl;
       if (this.audio) {
         this.audio.src = freshUrl;
         this.audio.currentTime = resumeTime;
-        await this.playVideo();
+        if (!this.userPaused) {
+          const playPromise = this.audio.play();
+          if (playPromise && typeof playPromise.then === 'function') {
+            await playPromise;
+          }
+        }
       }
+      return true;
     } catch (err) {
-      console.warn('[AudioElementPlayer] Re-request on stall failed:', err);
-      this.reportError(101, err, this.currentVideoId);
+      if (this.currentVideoId !== videoId) return false;
+      if (err?.name === 'NotAllowedError') {
+        console.warn('[AudioElementPlayer] Autoplay blocked by user-gesture policy.');
+        this.emit('onAutoplayBlocked');
+        return false;
+      }
+      if (err?.name === 'AbortError' && this.userPaused && !this.audio?.error) {
+        return false;
+      }
+      if (this.errorReportedFor !== videoId) {
+        console.warn('[AudioElementPlayer] Re-request on stall failed:', err);
+      }
+      this.reportError(101, err, videoId);
+      return false;
+    } finally {
+      if (this.currentVideoId === videoId) {
+        this.isRefreshing = false;
+      }
     }
   }
 
   handleAudioError(e) {
-    const isUnsupported =
-      this.audio?.error?.code === 4 ||
-      e?.name === 'NotSupportedError' ||
-      e?.message?.includes('no supported source');
+    if (this.audio && this.audio.currentTime > 0) {
+      this._lastKnownTime = this.audio.currentTime;
+    }
 
-    if (!isUnsupported && !this.hasRetried && this.currentVideoId) {
+    if (!this.hasRetried && this.currentVideoId) {
       this.handleStreamStall();
       return;
     }
@@ -473,6 +720,12 @@ export class AudioElementPlayer {
   destroy() {
     this.loadToken++;
     this.loadPromise = null;
+    this._clearPreloadedNext();
+    this.unlocked = false;
+    this.isUnlocking = false;
+    this.isRefreshing = false;
+    this.userPaused = false;
+    this._lastKnownTime = 0;
     if (this.currentBlobUrl) {
       try {
         URL.revokeObjectURL(this.currentBlobUrl);

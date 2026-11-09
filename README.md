@@ -19,6 +19,20 @@
 
 ---
 
+## 🎵 Playback Modes & Known Limitations
+
+Super Culture employs an intelligent dual-engine audio pipeline designed to maximize playback reliability across web and mobile platforms:
+
+- **Native `<audio>` Engine (Standard)**:
+  - Streams audio via the high-performance HTML5 `<audio>` element with backend byte-range proxying.
+  - Supports full background playback, screen-off listening, mobile lock-screen Media Session controls (album art, play/pause, seek, track skip), and fast byte-range seeking.
+- **YouTube IFrame Compatibility Mode**:
+  - Automatically activates when upstream audio streams are restricted by YouTube's 1 MiB Proof-of-Origin (PO) token cap (or on unexpected network drops).
+  - The backend classifies throttled streams during resolution and routes them directly to the headless YouTube IFrame player starting at `0:00`, preventing mid-song cutoffs.
+  - **Known Limitation**: Due to browser restrictions on background iframe execution, **lock-screen and background playback are unavailable** while compatibility mode is active (the device screen must stay awake).
+
+---
+
 ## 📋 Prerequisites
 
 - **Node.js**: `v18.0.0` or higher (Node 20+ recommended) and `npm`
@@ -157,6 +171,7 @@ The Super Culture backend is optimized for zero-cost deployment on platforms lik
 | `PORT` | Optional | `5001` | HTTP & WebSocket server port |
 | `NODE_ENV` | Optional | `development` | Set to `production` for containerized runs to enforce secure cookies |
 | `CORS_ORIGIN` | Optional | `https://super-culture-v2.onrender.com` | Comma-separated list of allowed frontend origins (e.g., `https://super-culture-v2.onrender.com,http://localhost:3000`) |
+| `ALLOW_PRIVATE_NETWORK_ORIGINS` | Optional | `false` | When `true` (always on in development), CORS also accepts private-network origins: `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, Tailscale `100.64-127.x.x`, `*.local` and `*.ts.net` — e.g. testing from a phone on the same Wi-Fi |
 | `APP_PASSCODE` | Optional | `""` | Shared secret passcode gating all `/api` routes with signed cookies |
 | `COOKIE_SECRET` | Optional | Auto-derived | Secret key used to sign session cookies |
 | `STREAM_SECRET` | Optional | Auto-derived | HMAC secret for signing 5-minute temporary audio streaming tokens |

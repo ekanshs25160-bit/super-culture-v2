@@ -3,6 +3,39 @@ import { Innertube, UniversalCache, ClientType } from 'youtubei.js';
 import { LRUCache } from 'lru-cache';
 import { TrackMeta, StreamEntry, ArtistMeta, SearchResultPayload } from '../types/index.js';
 
+export const DEFAULT_CLIENT_ORDER = ['VISIONOS', 'IOS', 'MWEB', 'MUSIC'] as const;
+
+export const VISIONOS_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15';
+
+export const getClientOrder = (): string[] => {
+  const envOrder = process.env.YT_CLIENT_ORDER;
+  if (envOrder && envOrder.trim().length > 0) {
+    return envOrder
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+  }
+  return [...DEFAULT_CLIENT_ORDER];
+};
+
+export const getClientUserAgent = (clientName?: string): string => {
+  switch (clientName) {
+    case 'VISIONOS':
+      return VISIONOS_USER_AGENT;
+    case 'IOS':
+      return 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)';
+    case 'ANDROID':
+      return 'com.google.android.youtube/19.44.38 (Linux; U; Android 14; en_US; Pixel 8 Pro Build/UQ1A.240205.004)';
+    case 'MWEB':
+      return 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+    case 'MUSIC':
+      return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+    default:
+      return 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)';
+  }
+};
+
 let ytInstance: Innertube | null = null;
 let ytInitPromise: Promise<Innertube> | null = null;
 
@@ -364,29 +397,13 @@ export class YouTubeService {
     return tracks;
   }
 
-  public async resolveAudioStream(videoId: string, prefer?: 'aac' | 'best'): Promise<StreamEntry> {
-    const cacheKey = `${videoId}:${prefer || 'best'}`;
-    const cached = this.streamCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached;
-    }
+  public invalidateStreamCache(videoId: string): void {
+    this.streamCache.delete(`${videoId}:aac`);
+    this.streamCache.delete(`${videoId}:best`);
+    this.streamCache.delete(videoId);
+  }
 
-    const client = await this.getClient();
-    let info: any;
-    try {
-      info = await client.getBasicInfo(videoId, { client: 'VISIONOS' });
-    } catch {
-      try {
-        info = await client.getBasicInfo(videoId, { client: 'IOS' });
-      } catch {
-        try {
-          info = await client.music.getInfo(videoId);
-        } catch {
-          info = await client.getInfo(videoId);
-        }
-      }
-    }
-
+  private pickFormat(info: any, prefer?: 'aac' | 'best'): any {
     let format: any;
     if (prefer === 'aac') {
       try {
@@ -413,39 +430,340 @@ export class YouTubeService {
     }
 
     if (!format) {
-      format = info.chooseFormat({
-        type: 'audio',
-        quality: 'best',
-      });
-    }
-
-    if (!format) {
-      throw new Error(`No compatible audio format found for video ${videoId}`);
-    }
-
-    let streamUrl = format.url;
-    if (!streamUrl && typeof format.decipher === 'function') {
       try {
-        streamUrl = await format.decipher(client.session.player);
-      } catch (decErr: any) {
-        console.warn(`[ytService] format.decipher failed for ${videoId}:`, decErr.message || decErr);
+        format = info.chooseFormat({
+          type: 'audio',
+          quality: 'best',
+        });
+      } catch {
+        // Fallback to choosing any audio adaptive format
       }
     }
 
-    if (!streamUrl) {
-      throw new Error(`Unable to decipher audio format for video ${videoId}`);
+    if (!format) {
+      const audioFormats = (info.streaming_data?.adaptive_formats || []).filter(
+        (f: any) => f.has_audio
+      );
+      if (audioFormats.length > 0) {
+        audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+        format = audioFormats[0];
+      }
     }
 
-    const entry: StreamEntry = {
-      videoId,
-      url: streamUrl,
-      mimeType: format.mime_type || 'audio/mp4',
-      bitrate: format.bitrate,
-      expiresAt: Date.now() + 1000 * 60 * 60 * 3.5,
+    return format;
+  }
+
+  public async probeStreamUrl(
+    url: string,
+    clientName: string
+  ): Promise<{ ok: boolean; throttled: boolean }> {
+    try {
+      const userAgent = getClientUserAgent(clientName);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': userAgent,
+          Range: 'bytes=0-1',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.status !== 200 && res.status !== 206) {
+        return { ok: false, throttled: false };
+      }
+
+      try {
+        await res.arrayBuffer();
+      } catch {}
+
+      const contentRange = res.headers.get('content-range') || '';
+      const match = contentRange.match(/\/(\d+)$/);
+      const contentLengthHeader = res.headers.get('content-length');
+      const total = match
+        ? parseInt(match[1], 10)
+        : contentLengthHeader
+        ? parseInt(contentLengthHeader, 10)
+        : 0;
+
+      if (total > 1_100_000) {
+        const probes: Array<{ start: number; end: number }> = [
+          { start: total - 64, end: total - 1 },
+        ];
+        if (total > 2_097_152) {
+          probes.push({ start: 1572864, end: 1572900 });
+        }
+
+        for (const { start, end } of probes) {
+          const expectedLength = end - start + 1;
+          const deepController = new AbortController();
+          const deepTimeout = setTimeout(() => deepController.abort(), 4000);
+          try {
+            const deepRes = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'User-Agent': userAgent,
+                Range: `bytes=${start}-${end}`,
+              },
+              signal: deepController.signal,
+            });
+            clearTimeout(deepTimeout);
+
+            let bodyLen = 0;
+            try {
+              const buf = await deepRes.arrayBuffer();
+              bodyLen = buf.byteLength;
+            } catch {}
+
+            if (deepRes.status === 206) {
+              continue;
+            }
+            const clHeader = deepRes.headers.get('content-length');
+            const reportedLen = clHeader ? parseInt(clHeader, 10) : bodyLen;
+            if (deepRes.status === 200 && (reportedLen === expectedLength || bodyLen === expectedLength)) {
+              continue;
+            }
+            return { ok: true, throttled: true };
+          } catch (_deepErr) {
+            clearTimeout(deepTimeout);
+            return { ok: true, throttled: true };
+          }
+        }
+      }
+
+      return { ok: true, throttled: false };
+    } catch (probeErr: any) {
+      console.warn(`[ytService] probe exception for ${clientName}:`, probeErr.message || probeErr);
+      return { ok: false, throttled: false };
+    }
+  }
+
+  private watchPageCache: { visitorData: string; sts: number; expiresAt: number } | null = null;
+  private watchPageInflight: Promise<{ visitorData: string; sts: number }> | null = null;
+
+  public async getWatchPageContext(
+    videoId: string,
+    forceRefresh = false
+  ): Promise<{ visitorData: string; sts: number }> {
+    if (!forceRefresh && this.watchPageCache && this.watchPageCache.expiresAt > Date.now()) {
+      return { visitorData: this.watchPageCache.visitorData, sts: this.watchPageCache.sts };
+    }
+    if (!forceRefresh && this.watchPageInflight) {
+      return this.watchPageInflight;
+    }
+
+    const task = (async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(
+          `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&bpctr=9999999999&has_verified=1`,
+          {
+            method: 'GET',
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+            signal: controller.signal,
+          }
+        );
+        clearTimeout(timeout);
+        const html = await res.text();
+        const vdMatch = html.match(/"VISITOR_DATA":"([^"]+)"/) || html.match(/"visitorData":"([^"]+)"/);
+        const stsMatch = html.match(/"STS":(\d+)/);
+        const visitorData = vdMatch ? vdMatch[1] : '';
+        const sts = stsMatch ? parseInt(stsMatch[1], 10) : 20760;
+
+        if (visitorData) {
+          this.watchPageCache = {
+            visitorData,
+            sts,
+            expiresAt: Date.now() + 1000 * 60 * 30, // 30 minutes TTL
+          };
+        }
+        return { visitorData, sts };
+      } finally {
+        clearTimeout(timeout);
+        this.watchPageInflight = null;
+      }
+    })();
+
+    this.watchPageInflight = task;
+    return task;
+  }
+
+  public async fetchVisionOsInfo(videoId: string): Promise<any> {
+    const callPlayer = async (visitorData: string, sts: number) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-YouTube-Client-Name': '101',
+            'X-YouTube-Client-Version': '1.02',
+            Origin: 'https://www.youtube.com',
+            'User-Agent': VISIONOS_USER_AGENT,
+            ...(visitorData ? { 'X-Goog-Visitor-Id': visitorData } : {}),
+          },
+          body: JSON.stringify({
+            context: {
+              client: {
+                clientName: 'VISIONOS',
+                clientVersion: '1.02',
+                deviceMake: 'Apple',
+                deviceModel: 'RealityDevice17,1',
+                userAgent: VISIONOS_USER_AGENT,
+                osName: 'visionOS',
+                osVersion: '26.5.23O471',
+                hl: 'en',
+                timeZone: 'UTC',
+                utcOffsetMinutes: 0,
+              },
+            },
+            videoId,
+            playbackContext: {
+              contentPlaybackContext: {
+                html5Preference: 'HTML5_PREF_WANTS',
+                signatureTimestamp: sts,
+              },
+            },
+            contentCheckOk: true,
+            racyCheckOk: true,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        return (await res.json()) as any;
+      } finally {
+        clearTimeout(timeout);
+      }
     };
 
-    this.streamCache.set(cacheKey, entry);
-    return entry;
+    let ctx = await this.getWatchPageContext(videoId, false);
+    let data = await callPlayer(ctx.visitorData, ctx.sts);
+
+    if (data?.playabilityStatus?.status !== 'OK' || !data?.streamingData) {
+      ctx = await this.getWatchPageContext(videoId, true);
+      data = await callPlayer(ctx.visitorData, ctx.sts);
+    }
+
+    const rawAdaptive = [
+      ...(data?.streamingData?.adaptiveFormats || []),
+      ...(data?.streamingData?.formats || []),
+    ];
+
+    const normalizedFormats = rawAdaptive.map((f: any) => ({
+      itag: f.itag,
+      url: f.url,
+      mime_type: f.mimeType || '',
+      bitrate: f.bitrate || f.averageBitrate || 0,
+      content_length: f.contentLength ? parseInt(String(f.contentLength), 10) : undefined,
+      has_audio: Boolean((f.mimeType && f.mimeType.startsWith('audio/')) || f.audioQuality),
+    }));
+
+    return {
+      playability_status: {
+        status: data?.playabilityStatus?.status,
+        reason: data?.playabilityStatus?.reason,
+      },
+      streaming_data: normalizedFormats.length > 0 ? { adaptive_formats: normalizedFormats } : null,
+    };
+  }
+
+  public async resolveAudioStream(videoId: string, prefer?: 'aac' | 'best'): Promise<StreamEntry> {
+    const cacheKey = `${videoId}:${prefer || 'best'}`;
+    const cached = this.streamCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached;
+    }
+
+    let client: Innertube | null = null;
+    let fallbackThrottledEntry: StreamEntry | null = null;
+    const clientOrder = getClientOrder();
+
+    for (const name of clientOrder) {
+      try {
+        let info: any;
+        if (name === 'VISIONOS') {
+          info = await this.fetchVisionOsInfo(videoId);
+        } else {
+          if (!client) {
+            client = await this.getClient();
+          }
+          info = name === 'MUSIC'
+            ? await client.music.getInfo(videoId)
+            : await client.getBasicInfo(videoId, { client: name as any });
+        }
+
+        if (!info.streaming_data) {
+          console.warn(`[ytService] ${videoId}: ${name} gave no formats (${info.playability_status?.status}: ${info.playability_status?.reason ?? ''})`);
+          continue;
+        }
+
+        const format = this.pickFormat(info, prefer);
+        if (!format) {
+          console.warn(`[ytService] ${videoId}: ${name} had no compatible audio formats`);
+          continue;
+        }
+
+        const url =
+          format.url ??
+          (typeof format.decipher === 'function' && client
+            ? await format.decipher(client.session.player)
+            : undefined);
+
+        if (!url) {
+          continue;
+        }
+
+        const probe = await this.probeStreamUrl(url, name);
+        if (!probe.ok) {
+          console.warn(`[ytService] ${videoId}: ${name} stream probe failed or returned non-200/206 status`);
+          continue;
+        }
+
+        const entry: StreamEntry = {
+          videoId,
+          url,
+          client: name,
+          mimeType: format.mime_type || (prefer === 'aac' ? 'audio/mp4; codecs="mp4a.40.2"' : 'audio/mp4'),
+          bitrate: format.bitrate,
+          expiresAt: Date.now() + 1000 * 60 * 60 * 3.5,
+          throttled: probe.throttled,
+        };
+
+        if (!probe.throttled) {
+          this.streamCache.set(cacheKey, entry);
+          return entry;
+        }
+
+        if (!fallbackThrottledEntry) {
+          fallbackThrottledEntry = entry;
+        }
+      } catch (e: any) {
+        console.warn(`[ytService] ${videoId}: ${name} failed: ${e.message}`);
+      }
+    }
+
+    if (fallbackThrottledEntry) {
+      const negativeTtlMs = 1000 * 60 * 30; // 30 minutes negative cache
+      const limitedEntry: StreamEntry = {
+        ...fallbackThrottledEntry,
+        throttled: true,
+        code: 'STREAM_LIMITED',
+        reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+        expiresAt: Date.now() + negativeTtlMs,
+      };
+      this.streamCache.set(cacheKey, limitedEntry, { ttl: negativeTtlMs });
+      return limitedEntry;
+    }
+
+    throw new Error('No client returned a playable stream');
   }
 
   public async getUpNext(videoId: string): Promise<TrackMeta[]> {

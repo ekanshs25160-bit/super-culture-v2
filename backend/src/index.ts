@@ -159,7 +159,7 @@ getYtClient().catch((ytErr: any) => {
 let server: ReturnType<typeof app.listen> | undefined;
 
 if (process.env.NODE_ENV !== 'test') {
-  server = app.listen(PORT, '0.0.0.0', () => {
+  server = app.listen(PORT, env.host, () => {
     console.log(`\n==================================================`);
     console.log(`  Super Culture v2.0 Backend Server Running`);
     console.log(`  Local URL:   http://${env.host}:${PORT}`);

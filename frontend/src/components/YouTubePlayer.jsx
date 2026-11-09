@@ -2,6 +2,11 @@ import { useEffect, useRef, memo, useContext } from 'react';
 import { AudioContext } from '../context/AudioContext';
 import { useUiStore } from '../store/useUiStore';
 import { createPlaybackEventHandler } from '../engine/playbackEventHandler';
+import {
+  hasValidVideoId,
+  buildYtPlayerOptions,
+  initOrSyncYouTubePlayer,
+} from '../engine/youtubePlayerController';
 
 const YouTubePlayer = memo(function YouTubePlayer() {
   const {
@@ -26,6 +31,13 @@ const YouTubePlayer = memo(function YouTubePlayer() {
   const isReadyRef = useRef(false);
   const initialVideoIdRef = useRef(currentTrack?.videoId);
   const initialTimeRef = useRef(currentTime);
+  const latestTrackRef = useRef(currentTrack);
+  latestTrackRef.current = currentTrack;
+  // When the audio engine failed mid-track, resume from the offset it reached.
+  const resumeFromFallback = (videoId) => {
+    const fb = useUiStore.getState().compatFallback;
+    return fb && fb.videoId === videoId && fb.seconds > 0 ? fb.seconds : null;
+  };
 
   const handlerRef = useRef(null);
   const wasPlayingBeforeHiddenRef = useRef(false);
@@ -82,11 +94,12 @@ const YouTubePlayer = memo(function YouTubePlayer() {
       handlerRef.current.setTrack(currentTrack.videoId);
     }
 
-    if (isReadyRef.current && playerInstanceRef.current && currentTrack?.videoId) {
+    if (isReadyRef.current && playerInstanceRef.current && hasValidVideoId(currentTrack?.videoId)) {
       try {
+        const startSeconds = resumeFromFallback(currentTrack.videoId) || 0;
         playerInstanceRef.current.loadVideoById({
           videoId: currentTrack.videoId,
-          startSeconds: 0,
+          startSeconds,
         });
         playerInstanceRef.current.playVideo();
       } catch (err) {
@@ -97,6 +110,8 @@ const YouTubePlayer = memo(function YouTubePlayer() {
 
   useEffect(() => {
     if (isInitializedRef.current) return;
+    const candidateVideoId = currentTrack?.videoId || initialVideoIdRef.current;
+    if (!hasValidVideoId(candidateVideoId)) return;
 
     const loadAPI = () => {
       return new Promise((resolve) => {
@@ -120,98 +135,95 @@ const YouTubePlayer = memo(function YouTubePlayer() {
       });
     };
 
-    const initPlayer = async () => {
-      await loadAPI();
-      if (isInitializedRef.current || !containerRef.current) return;
-      isInitializedRef.current = true;
+    initOrSyncYouTubePlayer({
+      currentTrack,
+      initialVideoIdRef,
+      isInitializedRef,
+      isReadyRef,
+      playerInstanceRef,
+      containerRef,
+      loadAPI,
+      resumeFromFallback,
+      createPlayer: (targetVideoId) =>
+        new window.YT.Player(
+          containerRef.current,
+          buildYtPlayerOptions({
+            videoId: targetVideoId,
+            origin: window.location.origin,
+            events: {
+              onReady: (event) => {
+                const activeVideoId = latestTrackRef.current?.videoId || targetVideoId;
+                console.log('[YouTubePlayer] Lazy headless iframe player ready with video:', activeVideoId);
+                isReadyRef.current = true;
+                playerInstanceRef.current = event.target;
+                setPlayerRef(event.target);
+                setPlayerReady();
+                event.target.setVolume(Math.round((volume || 0.74) * 100));
 
-      const targetVideoId = currentTrack?.videoId || initialVideoIdRef.current;
+                if (hasValidVideoId(activeVideoId)) {
+                  try {
+                    const resumeAt = resumeFromFallback(activeVideoId) ?? initialTimeRef.current;
+                    const loadedUrl = event.target.getVideoUrl?.() || '';
+                    if (activeVideoId !== targetVideoId || !loadedUrl.includes(activeVideoId)) {
+                      event.target.loadVideoById({
+                        videoId: activeVideoId,
+                        startSeconds: resumeAt && resumeAt > 0 ? resumeAt : 0,
+                      });
+                    } else if (resumeAt && resumeAt > 0) {
+                      event.target.seekTo(resumeAt, true);
+                    }
+                    event.target.playVideo();
+                  } catch (err) {
+                    console.warn('[YouTubePlayer] playVideo error in onReady:', err);
+                  }
 
-      playerInstanceRef.current = new window.YT.Player(containerRef.current, {
-        height: '200',
-        width: '200',
-        videoId: targetVideoId || undefined,
-        playerVars: {
-          autoplay: 1,
-          controls: 0,
-          disablekb: 1,
-          enablejsapi: 1,
-          fs: 0,
-          iv_load_policy: 3,
-          modestbranding: 1,
-          rel: 0,
-          showinfo: 0,
-          playsinline: 1,
-          origin: window.location.origin,
-        },
-        events: {
-          onReady: (event) => {
-            console.log('[YouTubePlayer] Lazy headless iframe player ready with video:', targetVideoId);
-            isReadyRef.current = true;
-            playerInstanceRef.current = event.target;
-            setPlayerRef(event.target);
-            setPlayerReady();
-            event.target.setVolume(Math.round((volume || 0.74) * 100));
-
-            if (targetVideoId) {
-              try {
-                if (initialTimeRef.current && initialTimeRef.current > 0) {
-                  event.target.seekTo(initialTimeRef.current, true);
+                  // On mobile, if autoplay is restricted by the user agent, prompt with tap-to-play
+                  setTimeout(() => {
+                    if (playerInstanceRef.current && typeof playerInstanceRef.current.getPlayerState === 'function') {
+                      const pState = playerInstanceRef.current.getPlayerState();
+                      if (pState !== 1 && pState !== 3) {
+                        setAutoplayBlocked(true);
+                      }
+                    }
+                  }, 700);
                 }
-                event.target.playVideo();
-              } catch (err) {
-                console.warn('[YouTubePlayer] playVideo error in onReady:', err);
-              }
-
-              // On mobile, if autoplay is restricted by the user agent, prompt with tap-to-play
-              setTimeout(() => {
-                if (playerInstanceRef.current && typeof playerInstanceRef.current.getPlayerState === 'function') {
-                  const pState = playerInstanceRef.current.getPlayerState();
-                  if (pState !== 1 && pState !== 3) {
+              },
+              onStateChange: (event) => {
+                if (event.data === 1) {
+                  // PLAYING
+                  setAutoplayBlocked(false);
+                } else if (event.data === 2) {
+                  // PAUSED
+                  if (document.visibilityState === 'hidden' && wasPlayingBeforeHiddenRef.current) {
+                    if (playerInstanceRef.current && typeof playerInstanceRef.current.playVideo === 'function') {
+                      try {
+                        playerInstanceRef.current.playVideo();
+                      } catch {
+                        // non-critical
+                      }
+                    }
+                    return;
+                  }
+                } else if (event.data === 5) {
+                  // CUED - if expecting playback, autoplay was restricted
+                  if (isPlaying) {
                     setAutoplayBlocked(true);
                   }
                 }
-              }, 700);
-            }
-          },
-          onStateChange: (event) => {
-            if (event.data === 1) {
-              // PLAYING
-              setAutoplayBlocked(false);
-            } else if (event.data === 2) {
-              // PAUSED
-              // If paused automatically by browser/YouTube due to switching tabs, ignore and resume
-              if (document.visibilityState === 'hidden' && wasPlayingBeforeHiddenRef.current) {
-                if (playerInstanceRef.current && typeof playerInstanceRef.current.playVideo === 'function') {
-                  try {
-                    playerInstanceRef.current.playVideo();
-                  } catch {
-                    // non-critical
-                  }
+                if (handlerRef.current) {
+                  handlerRef.current.handleStateChange(event.data, event.target);
                 }
-                return;
-              }
-            } else if (event.data === 5) {
-              // CUED - if expecting playback, autoplay was restricted
-              if (isPlaying) {
-                setAutoplayBlocked(true);
-              }
-            }
-            if (handlerRef.current) {
-              handlerRef.current.handleStateChange(event.data, event.target);
-            }
-          },
-          onError: (event) => {
-            console.warn('[YouTubePlayer] onError:', event.data);
-            if (handlerRef.current) {
-              handlerRef.current.handleError(event.data, 'YouTube iframe error');
-            }
-          },
-        },
-      });
-    };
-
-    initPlayer();
+              },
+              onError: (event) => {
+                console.warn('[YouTubePlayer] onError:', event.data);
+                if (handlerRef.current) {
+                  handlerRef.current.handleError(event.data, 'YouTube iframe error');
+                }
+              },
+            },
+          })
+        ),
+    });
 
     return () => {
       // Retain player instance across re-renders

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
-import { ytService, getArtistDiscography } from '../services/ytService.js';
+import { ytService, getArtistDiscography, getClientUserAgent } from '../services/ytService.js';
+import { serveChunked } from '../services/chunkedProxy.js';
 import { cacheService, CacheService } from '../services/cacheService.js';
 import { createStreamToken, verifyStreamToken } from '../services/tokenService.js';
 import { TrackMeta, StreamEntry } from '../types/index.js';
@@ -104,7 +105,25 @@ export class MusicController {
       const preferParam = prefer === 'aac' ? '&prefer=aac' : '';
       const url = `/api/yt/stream/${videoId}?t=${encodeURIComponent(token)}${preferParam}`;
 
-      res.json({ url });
+      const streamInfo = await ytService.resolveAudioStream(
+        videoId,
+        prefer === 'aac' ? 'aac' : 'best'
+      );
+
+      if (streamInfo.throttled || streamInfo.code === 'STREAM_LIMITED') {
+        res.json({
+          url,
+          throttled: true,
+          code: 'STREAM_LIMITED',
+          reason: streamInfo.reason || 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+        });
+        return;
+      }
+
+      res.json({
+        url,
+        throttled: false,
+      });
     } catch (err: any) {
       console.error('[MusicController] stream-url generation error:', err.message);
       res.status(500).json({ error: 'Failed to generate signed stream URL', details: err.message });
@@ -143,77 +162,59 @@ export class MusicController {
     });
 
     let streamInfo: StreamEntry;
+
     try {
       streamInfo = await ytService.resolveAudioStream(videoId, prefer);
-    } catch (resolveError: any) {
-      console.error(`[MusicController] Stream resolution failed for ${videoId}:`, resolveError.message || resolveError);
-      res.status(502).json({
-        code: 'STREAM_UNAVAILABLE',
-        message: 'Unable to resolve audio stream for this track',
-      });
-      return;
-    }
-
-    try {
-      const range = req.headers.range;
-      const upstreamHeaders: Record<string, string> = {
-        'User-Agent': 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)',
-      };
-      if (range) {
-        upstreamHeaders['Range'] = range;
-      }
-
-      const response = await axios.get(streamInfo.url, {
-        headers: upstreamHeaders,
-        responseType: 'stream',
+      await serveChunked(req, res, streamInfo.url, {
+        mimeType: streamInfo.mimeType,
+        headers: {
+          'User-Agent': getClientUserAgent(streamInfo.client),
+        },
         signal: abortController.signal,
-        validateStatus: (status) => status >= 200 && status < 400,
       });
-
-      res.status(response.status);
-      res.setHeader('Content-Type', String(streamInfo.mimeType || response.headers['content-type'] || 'audio/mp4'));
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Cache-Control', 'private, no-store');
-
-      if (response.headers['content-range']) {
-        res.setHeader('Content-Range', String(response.headers['content-range']));
+    } catch (initialErr: any) {
+      if (axios.isCancel(initialErr) || abortController.signal.aborted) {
+        return;
       }
-      if (response.headers['content-length']) {
-        res.setHeader('Content-Length', String(response.headers['content-length']));
-      }
-
-      req.on('close', () => {
-        if (response.data && typeof response.data.destroy === 'function') {
-          response.data.destroy();
-        }
-      });
-
-      if (req.method === 'HEAD') {
-        if (response.data && typeof response.data.destroy === 'function') {
-          response.data.destroy();
-        }
-        res.end();
+      if (res.headersSent) {
+        console.warn(
+          `[MusicController] Error after headers sent for ${videoId}:`,
+          initialErr.message || initialErr
+        );
+        ytService.invalidateStreamCache(videoId);
+        res.socket?.destroy();
         return;
       }
 
-      response.data.pipe(res);
-    } catch (error: any) {
-      if (error.response?.status === 403) {
-        ytService.streamCache.delete(`${videoId}:${prefer}`);
-        ytService.streamCache.delete(`${videoId}:aac`);
-        ytService.streamCache.delete(`${videoId}:best`);
-        ytService.streamCache.delete(videoId);
-      }
+      console.warn(
+        `[MusicController] Initial upstream stream failed for ${videoId} (${initialErr.message || initialErr}). Retrying once with fresh stream resolution...`
+      );
+      ytService.invalidateStreamCache(videoId);
 
-      if (axios.isCancel(error) || abortController.signal.aborted) {
-        return;
-      }
-      console.error(`[MusicController] Stream error for ${videoId}:`, error.message || error);
-      if (!res.headersSent) {
-        res.status(502).json({
-          code: 'STREAM_UNAVAILABLE',
-          message: 'Upstream audio stream could not be loaded',
+      try {
+        streamInfo = await ytService.resolveAudioStream(videoId, prefer);
+        await serveChunked(req, res, streamInfo.url, {
+          mimeType: streamInfo.mimeType,
+          headers: {
+            'User-Agent': getClientUserAgent(streamInfo.client),
+          },
+          signal: abortController.signal,
         });
+      } catch (retryErr: any) {
+        if (axios.isCancel(retryErr) || abortController.signal.aborted) {
+          return;
+        }
+        console.error(
+          `[MusicController] Stream resolution retry failed for ${videoId}:`,
+          retryErr.message || retryErr
+        );
+        if (!res.headersSent) {
+          res.status(502).json({
+            code: 'STREAM_UNAVAILABLE',
+            message: 'Unable to resolve audio stream for this track',
+          });
+        }
+        return;
       }
     }
   }
@@ -228,7 +229,7 @@ export class MusicController {
       const upstreamRes = await axios.get(streamInfo.url, {
         headers: {
           Range: 'bytes=0-1',
-          'User-Agent': 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)',
+          'User-Agent': getClientUserAgent(streamInfo.client),
         },
         responseType: 'stream',
         validateStatus: () => true,

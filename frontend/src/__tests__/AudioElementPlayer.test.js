@@ -296,4 +296,238 @@ describe('AudioElementPlayer Unit Tests', () => {
     await player.playVideo();
     assert.equal(player.getPlayerState(), PlayerState.PLAYING);
   });
+
+  it('synchronous unlock: blesses audio element with silent WAV data URI without emitting state changes', async () => {
+    let recordedEvents = [];
+    player.on('onPlaying', () => recordedEvents.push('playing'));
+    player.on('onPaused', () => recordedEvents.push('paused'));
+    player.on('onStateChange', (s) => recordedEvents.push(`state-${s}`));
+
+    assert.equal(player.unlocked, false);
+    assert.equal(player.getPlayerState(), PlayerState.UNSTARTED);
+
+    // Call unlock synchronously
+    player.unlock();
+
+    assert.equal(player.unlocked, true);
+    assert(player.audio.src.startsWith('data:audio/wav;base64,'));
+
+    // Wait a tick for unlock's playPromise.then to resolve and pause
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Must NOT leak any events or change state away from UNSTARTED
+    assert.deepEqual(recordedEvents, [], 'Unlock phase must not emit playback events');
+    assert.equal(player.getPlayerState(), PlayerState.UNSTARTED);
+
+    // Calling unlock again should be an immediate no-op
+    const previousSrc = player.audio.src;
+    player.unlock();
+    assert.equal(player.audio.src, previousSrc);
+  });
+
+  it('unlock does not pause real track if loadVideoById starts before unlock resolves', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=fast-track`,
+    });
+
+    // Synchronously unlock
+    player.unlock();
+
+    // Immediately load real track
+    await player.loadVideoById({ videoId: 'fast-track' });
+
+    assert.equal(player.audio.src, '/api/yt/stream/fast-track?t=fast-track');
+    assert.equal(player.audio.paused, false);
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+  });
+
+  it('preserves target seek timestamp (94.21s) across a failed stream refresh when audio.currentTime resets to 0', async () => {
+    let callCount = 0;
+    apiClient.music.getStreamUrl = async (videoId) => {
+      callCount++;
+      return { url: `/api/yt/stream/${videoId}?t=seek-token-${callCount}` };
+    };
+
+    await player.loadVideoById({ videoId: 'OfMBWq8Agf0' });
+    assert.equal(callCount, 1);
+
+    // User scrubs past the 1 MiB boundary to 94.21s
+    player.seekTo(94.212765);
+    assert.equal(player.getCurrentTime(), 94.212765);
+
+    // Simulate browser behavior where assigning a failing 502 src resets audio.currentTime to 0
+    // and play() rejects with a media error or AbortError
+    player.audio.play = async () => {
+      player.audio.currentTime = 0;
+      const err = new Error('The play() request was interrupted by a failed media load (502)');
+      err.name = 'AbortError';
+      throw err;
+    };
+
+    let emittedError = null;
+    player.on('onError', (code, err) => {
+      emittedError = { code, err };
+    });
+
+    // First error at 94.21s triggers internal signed-URL refresh (handleStreamStall)
+    player.audio.dispatchEvent({ type: 'error' });
+    await new Promise((r) => setTimeout(r, 30));
+
+    assert.equal(callCount, 2, 'Should refresh signed URL once');
+    assert.equal(player.hasRetried, true, 'Player should mark hasRetried = true');
+    assert.ok(emittedError !== null, 'Failed refresh play() must emit onError for fallback');
+    assert.equal(player.audio.currentTime, 0, 'Underlying element reset to 0');
+    assert.equal(player.getCurrentTime(), 94.212765, 'getCurrentTime() must preserve the 94.212765s seek target');
+  });
+
+  it('routes throttled streams directly to compatibility fallback at 0:00 without starting audio playback', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=throttled-token`,
+      throttled: true,
+    });
+
+    let fallbackPayload = null;
+    let throttledEventPayload = null;
+
+    player = new AudioElementPlayer({
+      onUnrecoverable: (payload) => {
+        fallbackPayload = payload;
+      },
+    });
+
+    player.on('onThrottled', (payload) => {
+      throttledEventPayload = payload;
+    });
+
+    await player.loadVideoById({ videoId: 'throttled-test-vid', startSeconds: 0 });
+
+    assert.equal(player.audio.src, '', 'Audio src must NOT be assigned for throttled tracks');
+    assert.equal(player.audio.paused, true, 'Audio element must NOT start playing');
+    assert.deepEqual(fallbackPayload, {
+      videoId: 'throttled-test-vid',
+      seconds: 0,
+      reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+    });
+    assert.deepEqual(throttledEventPayload, fallbackPayload);
+    assert.equal(player.hasRetried, true);
+  });
+
+  it('A5: restoring a saved state at 91s via cueVideoById makes zero network requests and emits no error; clicking play then loads at 91s', async () => {
+    let networkRequests = 0;
+    apiClient.music.getStreamUrl = async (videoId) => {
+      networkRequests++;
+      return { url: `/api/yt/stream/${videoId}?t=lazy-cue-token` };
+    };
+
+    let emittedError = null;
+    let emittedStates = [];
+    player.on('onError', (code, err) => {
+      emittedError = { code, err };
+    });
+    player.on('onStateChange', (s) => {
+      emittedStates.push(s);
+    });
+
+    // 1. Restore saved state at 91s
+    await player.cueVideoById({ videoId: 'saved-track-91', startSeconds: 91 });
+
+    assert.equal(networkRequests, 0, 'cueVideoById must make zero network requests');
+    assert.equal(player.audio.src, '', 'cueVideoById must NOT set audio.src');
+    assert.equal(player.audio.currentTime, 0, 'cueVideoById must NOT set audio.currentTime');
+    assert.equal(player.userPaused, true, 'cueVideoById must set userPaused=true');
+    assert.equal(player.currentVideoId, 'saved-track-91');
+    assert.equal(player._lastKnownTime, 91);
+    assert.equal(player.getCurrentTime(), 91);
+    assert.equal(player.getPlayerState(), PlayerState.CUED);
+    assert.deepEqual(emittedStates, [PlayerState.CUED]);
+    assert.equal(emittedError, null, 'cueVideoById must emit no error');
+
+    // 2. Clicking play (even after synchronous unlock) loads at 91s
+    player.unlock();
+    await player.playVideo();
+
+    assert.equal(networkRequests, 1, 'First playVideo() fetches stream URL once');
+    assert.equal(player.audio.src, '/api/yt/stream/saved-track-91?t=lazy-cue-token');
+    assert.equal(player.audio.currentTime, 91, 'First playVideo() seeks to saved 91s position');
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+    assert.equal(emittedError, null);
+  });
+
+  it('A5: handleStreamStall does not call audio.play() when userPaused is true', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=stall-paused-token`,
+    });
+
+    await player.loadVideoById({ videoId: 'paused-stall-track', startSeconds: 30 });
+    player.pauseVideo();
+    assert.equal(player.userPaused, true);
+
+    let playCalledDuringStall = false;
+    const origPlay = player.audio.play.bind(player.audio);
+    player.audio.play = async () => {
+      playCalledDuringStall = true;
+      return origPlay();
+    };
+
+    await player.handleStreamStall();
+    assert.equal(playCalledDuringStall, false, 'handleStreamStall must not call audio.play() when userPaused is true');
+  });
+  it('preloaded next track: src is assigned and play() called synchronously with zero network requests', async () => {
+    let requests = [];
+    apiClient.music.getStreamUrl = async (videoId) => {
+      requests.push(videoId);
+      return { url: `/api/yt/stream/${videoId}?t=pre-${videoId}` };
+    };
+
+    await player.loadVideoById({ videoId: 'track-one' });
+    await player.preloadNextStreamUrl('track-two');
+    assert.deepEqual(requests, ['track-one', 'track-two']);
+    assert.equal(player._preloadedNext.videoId, 'track-two');
+
+    let playCalled = false;
+    const origPlay = player.audio.play.bind(player.audio);
+    player.audio.play = () => {
+      playCalled = true;
+      return origPlay();
+    };
+
+    // Simulates the 'ended' hand-off: no await between the call and the src/play() side effects
+    const pending = player.loadVideoById({ videoId: 'track-two', startSeconds: 0 });
+    assert.equal(player.audio.src, '/api/yt/stream/track-two?t=pre-track-two');
+    assert.equal(playCalled, true, 'play() must be invoked synchronously');
+    assert.deepEqual(player._preloadedNext, { videoId: null, url: null });
+
+    await pending;
+    assert.deepEqual(requests, ['track-one', 'track-two'], 'fast path must not fetch');
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+  });
+
+  it('falls back to the network slow-path when the next track was not preloaded', async () => {
+    let requests = [];
+    apiClient.music.getStreamUrl = async (videoId) => {
+      requests.push(videoId);
+      return { url: `/api/yt/stream/${videoId}?t=slow-${videoId}` };
+    };
+
+    await player.preloadNextStreamUrl('wrong-track');
+    await player.loadVideoById({ videoId: 'other-track' });
+
+    assert.deepEqual(requests, ['wrong-track', 'other-track']);
+    assert.equal(player.audio.src, '/api/yt/stream/other-track?t=slow-other-track');
+  });
+
+  it('does not use the fast path for a throttled preload (routes to compatibility fallback)', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=x`,
+      throttled: true,
+    });
+    let fallback = null;
+    player = new AudioElementPlayer({ onUnrecoverable: (p) => { fallback = p; } });
+
+    await player.preloadNextStreamUrl('limited-track');
+    await player.loadVideoById({ videoId: 'limited-track' });
+
+    assert.equal(player.audio.src, '');
+    assert.equal(fallback?.videoId, 'limited-track');
+  });
 });

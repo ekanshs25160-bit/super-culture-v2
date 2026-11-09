@@ -24,7 +24,7 @@ export default function TrackRow({
   showRemove = false,
 }) {
   const navigate = useNavigate();
-  const { playTrack, currentTrack, isPlaying, togglePlay, showToast } = useAudio();
+  const { playTrack, currentTrack, isPlaying, togglePlay, showToast, unlock } = useAudio();
   const isLiked = useLibraryStore((s) => s.isLiked(track?.videoId || track?.id));
   const toggleLike = useLibraryStore((s) => s.toggleLike);
   const isDownloaded = useLibraryStore((s) => s.isDownloaded(track?.videoId || track?.id));
@@ -40,6 +40,9 @@ export default function TrackRow({
   const isCurrentPlaying = isCurrent && isPlaying;
 
   const handleRowClick = () => {
+    if (typeof unlock === 'function') {
+      unlock();
+    }
     if (isCurrent) {
       togglePlay();
     } else {

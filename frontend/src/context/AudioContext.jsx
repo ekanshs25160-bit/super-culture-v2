@@ -1,6 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useEffect, useState, useRef, useCallback } from 'react';
 import playbackPersistence from '../services/playbackPersistence';
+import { useUiStore } from '../store/useUiStore';
+import { prepareTrackSelection } from '../engine/trackTransitionSync';
 
 export const AudioContext = createContext({
   currentTrack: null,
@@ -19,6 +21,7 @@ export const AudioContext = createContext({
   isAiDjActive: false,
   privacyMode: 'public',
   activeMood: { index: 0, name: 'Energetic' },
+  unlock: () => {},
   playSelectedTrack: () => {},
   playTrack: () => {},
   skipTrack: () => {},
@@ -73,7 +76,10 @@ export const AudioProvider = ({ children }) => {
   const [toastMessage, setToastMessage] = useState(null);
 
   const [isPlayerReady, setIsPlayerReady] = useState(false);
+  const [playerEpoch, setPlayerEpoch] = useState(0);
   const playerRef = useRef(null);
+  // Next track chosen ahead of time (needed so shuffle skips land on the pre-resolved URL)
+  const plannedNextRef = useRef({ fromVideoId: null, track: null });
   const progressIntervalRef = useRef(null);
   const toastTimeoutRef = useRef(null);
 
@@ -179,16 +185,41 @@ export const AudioProvider = ({ children }) => {
 
   // Set Player Ref from YouTubePlayer component
   const setPlayerRef = useCallback((player) => {
-    playerRef.current = player;
+    if (playerRef.current !== player) {
+      playerRef.current = player;
+      setPlayerEpoch((n) => n + 1);
+    } else {
+      playerRef.current = player;
+    }
   }, []);
 
   const setPlayerReady = useCallback(() => {
     setIsPlayerReady(true);
   }, []);
 
+  // Synchronously unlock audio inside user gesture
+  const unlock = useCallback(() => {
+    if (playerRef.current && typeof playerRef.current.unlock === 'function') {
+      playerRef.current.unlock();
+    }
+  }, []);
+
   // Play a track and dynamically replace or update queue
   const playSelectedTrack = useCallback(async (track, customQueue = null) => {
     if (!track) return;
+
+    const previousTrackVideoId = stateRef.current.currentTrack?.videoId || null;
+    const { shouldLoadOnPlayerRef, isSameTrack } = prepareTrackSelection({
+      track,
+      currentTrackVideoId: previousTrackVideoId,
+      playerRef,
+      uiStore: useUiStore,
+    });
+
+    // Synchronously unlock audio on the native player inside user gesture BEFORE any await!
+    if (playerRef.current && typeof playerRef.current.unlock === 'function') {
+      playerRef.current.unlock();
+    }
 
     if (isEmptyPlayer) {
       setIsEmptyPlayer(false);
@@ -216,12 +247,22 @@ export const AudioProvider = ({ children }) => {
     }
 
     setCurrentTrack(track);
-    setCurrentTime(0);
+    if (!isSameTrack) {
+      setCurrentTime(0);
+    }
     if (track.seconds) {
       setDuration(track.seconds);
     }
 
-    if (playerRef.current && track.videoId) {
+    if (isSameTrack) {
+      if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+        try {
+          await playerRef.current.playVideo();
+        } catch (err) {
+          console.warn('[AudioContext] Could not resume same track:', err);
+        }
+      }
+    } else if (shouldLoadOnPlayerRef && playerRef.current && track.videoId) {
       try {
         await playerRef.current.loadVideoById({
           videoId: track.videoId,
@@ -252,6 +293,11 @@ export const AudioProvider = ({ children }) => {
 
   // Toggle master Play / Pause
   const togglePlay = useCallback(() => {
+    // Synchronously unlock audio inside user gesture
+    if (playerRef.current && typeof playerRef.current.unlock === 'function') {
+      playerRef.current.unlock();
+    }
+
     if (isEmptyPlayer) {
       setIsEmptyPlayer(false);
     }
@@ -286,6 +332,46 @@ export const AudioProvider = ({ children }) => {
     }
   }, [isEmptyPlayer, currentTrack, queue, isPlaying, playSelectedTrack, showToast]);
 
+  // Pre-resolve the next track's stream URL while the current one plays, so the ended -> play() hand-off
+  // (and lock-screen "Next") needs no network await.
+  useEffect(() => {
+    if (!currentTrack?.videoId || !Array.isArray(queue) || queue.length < 2) {
+      plannedNextRef.current = { fromVideoId: null, track: null };
+      return;
+    }
+    const currentIndex = queue.findIndex(
+      (t) => t.id === currentTrack.id || t.videoId === currentTrack.videoId
+    );
+    if (currentIndex === -1) return;
+
+    let nextTrack;
+    const planned = plannedNextRef.current;
+    const plannedStillValid =
+      isShuffle &&
+      planned.fromVideoId === currentTrack.videoId &&
+      planned.track &&
+      planned.track.videoId !== currentTrack.videoId &&
+      queue.some((t) => t.videoId === planned.track.videoId);
+    if (plannedStillValid) {
+      nextTrack = planned.track;
+    } else if (isShuffle) {
+      let idx;
+      do {
+        idx = Math.floor(Math.random() * queue.length);
+      } while (idx === currentIndex);
+      nextTrack = queue[idx];
+    } else {
+      nextTrack = queue[(currentIndex + 1) % queue.length];
+    }
+
+    plannedNextRef.current = { fromVideoId: currentTrack.videoId, track: nextTrack };
+
+    const player = playerRef.current;
+    if (nextTrack?.videoId && player && typeof player.preloadNextStreamUrl === 'function') {
+      player.preloadNextStreamUrl(nextTrack.videoId);
+    }
+  }, [currentTrack, queue, isShuffle, isPlayerReady, playerEpoch]);
+
   // Skip track forward or backward with direction (+1 or -1)
   const skipTrack = useCallback((direction = 1) => {
     if (isEmptyPlayer) {
@@ -300,7 +386,14 @@ export const AudioProvider = ({ children }) => {
     );
 
     let nextIndex;
-    if (shuffle && currentQueue.length > 1) {
+    const planned = plannedNextRef.current;
+    const plannedIndex =
+      direction === 1 && planned.track && planned.fromVideoId === (activeTrack?.videoId || null)
+        ? currentQueue.findIndex((t) => t.id === planned.track.id || (planned.track.videoId && t.videoId === planned.track.videoId))
+        : -1;
+    if (plannedIndex !== -1 && plannedIndex !== currentIndex) {
+      nextIndex = plannedIndex;
+    } else if (shuffle && currentQueue.length > 1) {
       do {
         nextIndex = Math.floor(Math.random() * currentQueue.length);
       } while (nextIndex === currentIndex);
@@ -477,6 +570,7 @@ export const AudioProvider = ({ children }) => {
         isAiDjActive,
         privacyMode,
         activeMood,
+        unlock,
         playSelectedTrack,
         playTrack,
         skipTrack,
