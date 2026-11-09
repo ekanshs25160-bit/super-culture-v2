@@ -42,13 +42,15 @@ describe('PlayerConstants & resolveEffectiveEngine Suite (A7)', () => {
   });
 
   afterEach(() => {
-    setAudioEngineEnabled(false);
+    setAudioEngineEnabled(true);
     delete globalThis.AUDIO_ENGINE_ENABLED;
   });
 
-  describe('0. AUDIO_ENGINE_ENABLED Default Flag (false by default)', () => {
-    it('defaults AUDIO_ENGINE_ENABLED to false so every device uses YouTube iframe when disabled', () => {
-      assert.equal(AUDIO_ENGINE_ENABLED, false);
+  describe('0. AUDIO_ENGINE_ENABLED Flag Behavior', () => {
+    it('enables AUDIO_ENGINE_ENABLED by default after Part B and forces YouTube iframe when set to false', () => {
+      assert.equal(AUDIO_ENGINE_ENABLED, true);
+
+      setAudioEngineEnabled(false);
 
       // Desktop
       assert.equal(resolveEffectiveEngine('Auto'), 'youtube');

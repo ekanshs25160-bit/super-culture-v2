@@ -19,22 +19,22 @@ export const PlaybackEngine = {
   YOUTUBE: 'YouTube player',
 };
 
-const envAudioEngineEnabled =
+const envAudioEngineDisabled =
   (typeof import.meta !== 'undefined' &&
     import.meta.env &&
-    (import.meta.env.VITE_AUDIO_ENGINE_ENABLED === 'true' ||
-      import.meta.env.AUDIO_ENGINE_ENABLED === 'true')) ||
+    (import.meta.env.VITE_AUDIO_ENGINE_ENABLED === 'false' ||
+      import.meta.env.AUDIO_ENGINE_ENABLED === 'false')) ||
   (typeof globalThis !== 'undefined' &&
     globalThis.process?.env &&
-    (globalThis.process.env.VITE_AUDIO_ENGINE_ENABLED === 'true' ||
-      globalThis.process.env.AUDIO_ENGINE_ENABLED === 'true')) ||
+    (globalThis.process.env.VITE_AUDIO_ENGINE_ENABLED === 'false' ||
+      globalThis.process.env.AUDIO_ENGINE_ENABLED === 'false')) ||
   false;
 
 /**
  * Feature flag controlling whether the <audio> proxy engine is enabled.
- * Defaults to false so every device uses the YouTube IFrame until Part B PO-token unthrottling is enabled.
+ * Enabled (true) after Part B acceptance tests passed.
  */
-export let AUDIO_ENGINE_ENABLED = Boolean(envAudioEngineEnabled);
+export let AUDIO_ENGINE_ENABLED = !envAudioEngineDisabled;
 
 export const setAudioEngineEnabled = (enabled) => {
   AUDIO_ENGINE_ENABLED = Boolean(enabled);
