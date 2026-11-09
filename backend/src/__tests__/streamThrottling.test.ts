@@ -298,4 +298,49 @@ describe('Stream Throttling Classification Suite (A1)', () => {
       }
     });
   });
+
+  describe('B1 & B3: Configurable client order and VISIONOS unthrottled resolution', () => {
+    it('tries clients in configurable YT_CLIENT_ORDER and selects the first client passing A1 tail + 1.5 MiB probes', async () => {
+      ytService.resolveAudioStream = originalResolve;
+      ytService.getClient = originalGetClient;
+      const savedEnv = process.env.YT_CLIENT_ORDER;
+      const savedFetchVision = ytService.fetchVisionOsInfo.bind(ytService);
+      const savedProbe = ytService.probeStreamUrl.bind(ytService);
+      try {
+        process.env.YT_CLIENT_ORDER = 'VISIONOS,IOS,MWEB,MUSIC';
+        ytService.fetchVisionOsInfo = async () => ({
+          playability_status: { status: 'OK' },
+          streaming_data: {
+            adaptive_formats: [
+              {
+                itag: 140,
+                url: 'https://fake-visionos-cdn.googlevideo.com/videoplayback?c=VISIONOS',
+                mime_type: 'audio/mp4; codecs="mp4a.40.2"',
+                bitrate: 128000,
+                content_length: 4144911,
+                has_audio: true,
+              },
+            ],
+          },
+        });
+        ytService.probeStreamUrl = async (url: string, clientName: string) => ({
+          ok: true,
+          throttled: clientName !== 'VISIONOS' || !url.includes('VISIONOS'),
+        });
+
+        const entry = await ytService.resolveAudioStream('visionos-test-id', 'aac');
+        assert.equal(entry.client, 'VISIONOS');
+        assert.equal(entry.throttled, false);
+        assert.equal(entry.url, 'https://fake-visionos-cdn.googlevideo.com/videoplayback?c=VISIONOS');
+      } finally {
+        if (savedEnv === undefined) {
+          delete process.env.YT_CLIENT_ORDER;
+        } else {
+          process.env.YT_CLIENT_ORDER = savedEnv;
+        }
+        ytService.fetchVisionOsInfo = savedFetchVision;
+        ytService.probeStreamUrl = savedProbe;
+      }
+    });
+  });
 });
