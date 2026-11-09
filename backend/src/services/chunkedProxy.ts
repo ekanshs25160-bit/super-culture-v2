@@ -140,32 +140,55 @@ export async function serveChunked(
     return;
   }
 
-  async function* body(): AsyncGenerator<Buffer> {
-    let pos = start;
-    let current: AxiosResponse<Readable> | null = first;
-    while (pos <= finalEnd) {
-      if (!current) {
-        const chunkEnd = Math.min(pos + CHUNK_SIZE - 1, finalEnd);
-        current = await fetchChunk(upstreamUrl, pos, chunkEnd, headers, signal);
-      }
-      for await (const piece of current.data) {
-        const buf = piece as Buffer;
-        const remaining = finalEnd - pos + 1;
-        if (buf.length > remaining) {
-          yield buf.subarray(0, remaining);
-          pos += remaining;
-          break;
+  return new Promise<void>((resolve, reject) => {
+    async function* body(): AsyncGenerator<Buffer> {
+      let pos = start;
+      let current: AxiosResponse<Readable> | null = first;
+      while (pos <= finalEnd) {
+        if (!current) {
+          const chunkEnd = Math.min(pos + CHUNK_SIZE - 1, finalEnd);
+          try {
+            current = await fetchChunk(upstreamUrl, pos, chunkEnd, headers, signal);
+          } catch (chunkErr: any) {
+            console.error(
+              `[ChunkedProxy] Chunk request failed after headers sent (bytes=${pos}-${chunkEnd}):`,
+              chunkErr?.message || chunkErr
+            );
+            if (res.headersSent) {
+              setImmediate(() => {
+                res.socket?.destroy();
+              });
+            }
+            throw chunkErr;
+          }
         }
-        yield buf;
-        pos += buf.length;
+        for await (const piece of current.data) {
+          const buf = piece as Buffer;
+          const remaining = finalEnd - pos + 1;
+          if (buf.length > remaining) {
+            yield buf.subarray(0, remaining);
+            pos += remaining;
+            break;
+          }
+          yield buf;
+          pos += buf.length;
+        }
+        current = null;
       }
-      current = null;
     }
-  }
 
-  pipeline(Readable.from(body()), res, (err: any) => {
-    if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
-      console.error('[ChunkedProxy] Mid-stream pipeline error:', err.message);
-    }
+    pipeline(Readable.from(body()), res, (err: any) => {
+      if (err) {
+        if (err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+          console.error('[ChunkedProxy] Mid-stream pipeline error:', err.message || err);
+        }
+        if (res.headersSent) {
+          res.socket?.destroy();
+        }
+        reject(err);
+        return;
+      }
+      resolve();
+    });
   });
 }

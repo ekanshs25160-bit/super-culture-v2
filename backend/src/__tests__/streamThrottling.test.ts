@@ -1,8 +1,13 @@
 import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
+import { Readable } from 'node:stream';
+import axios from 'axios';
 import request from 'supertest';
 import { app } from '../index.js';
 import { ytService } from '../services/ytService.js';
+import { createStreamToken } from '../services/tokenService.js';
+import { CHUNK_SIZE } from '../services/chunkedProxy.js';
 
 describe('Stream Throttling Classification Suite (A1)', () => {
   const originalFetch = globalThis.fetch;
@@ -182,6 +187,115 @@ describe('Stream Throttling Classification Suite (A1)', () => {
       assert.equal(res.body.throttled, false);
       assert.equal(res.body.code, undefined);
       assert(res.body.url.includes('/api/yt/stream/clean-track-id'));
+    });
+  });
+
+  describe('Mid-stream chunk failure socket destruction (A2)', () => {
+    const originalAxiosGet = axios.get;
+
+    after(() => {
+      axios.get = originalAxiosGet;
+    });
+
+    it('destroys res.socket when chunk 2 fails after headers sent so response ends within 1s with fewer bytes than Content-Length', async () => {
+      const totalSize = 2_500_000;
+      const videoId = 'chunk2-fail-vid';
+      const token = createStreamToken(videoId);
+
+      ytService.resolveAudioStream = async () => ({
+        videoId,
+        url: 'https://fake-cdn.googlevideo.com/chunk2-fail',
+        mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+        bitrate: 128000,
+        expiresAt: Date.now() + 3600000,
+        throttled: false,
+      });
+
+      axios.get = (async (_url: string, config: any) => {
+        const range: string = config?.headers?.Range || '';
+        if (range === 'bytes=0-1') {
+          return {
+            status: 206,
+            headers: {
+              'content-range': `bytes 0-1/${totalSize}`,
+              'content-length': '2',
+            },
+            data: Readable.from([Buffer.alloc(2)]),
+          };
+        }
+        if (range === `bytes=0-${CHUNK_SIZE - 1}`) {
+          return {
+            status: 206,
+            headers: {
+              'content-range': `bytes 0-${CHUNK_SIZE - 1}/${totalSize}`,
+              'content-length': String(CHUNK_SIZE),
+            },
+            data: Readable.from([Buffer.alloc(CHUNK_SIZE, 0x61)]),
+          };
+        }
+        // Chunk 2 fails with 403 Forbidden
+        const err: any = new Error('Request failed with status code 403');
+        err.response = { status: 403, data: Readable.from([]) };
+        throw err;
+      }) as any;
+
+      const srv = http.createServer(app);
+      await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', () => resolve()));
+      const addr = srv.address() as { port: number };
+
+      try {
+        const startMs = Date.now();
+        const result = await new Promise<{
+          statusCode: number;
+          contentLength: number;
+          bytesReceived: number;
+          elapsedMs: number;
+        }>((resolve, reject) => {
+          const req = http.get(
+            `http://127.0.0.1:${addr.port}/api/yt/stream/${videoId}?t=${encodeURIComponent(token)}`,
+            (res) => {
+              const contentLength = Number(res.headers['content-length'] || 0);
+              let bytesReceived = 0;
+              let settled = false;
+              const finish = () => {
+                if (settled) return;
+                settled = true;
+                resolve({
+                  statusCode: res.statusCode || 0,
+                  contentLength,
+                  bytesReceived,
+                  elapsedMs: Date.now() - startMs,
+                });
+              };
+              res.on('data', (chunk: Buffer) => {
+                bytesReceived += chunk.length;
+              });
+              res.on('end', finish);
+              res.on('aborted', finish);
+              res.on('close', finish);
+              res.on('error', finish);
+            }
+          );
+          req.on('error', (err) => {
+            // ECONNRESET after partial body is also a valid immediate termination
+            reject(err);
+          });
+        });
+
+        assert.equal(result.statusCode, 200);
+        assert.equal(result.contentLength, totalSize);
+        assert(
+          result.elapsedMs < 1000,
+          `Expected response to terminate within 1000ms, took ${result.elapsedMs}ms`
+        );
+        assert(
+          result.bytesReceived < result.contentLength,
+          `Expected fewer bytes (${result.bytesReceived}) than Content-Length (${result.contentLength})`
+        );
+        assert(result.bytesReceived <= CHUNK_SIZE);
+      } finally {
+        await new Promise<void>((resolve) => srv.close(() => resolve()));
+      }
     });
   });
 });

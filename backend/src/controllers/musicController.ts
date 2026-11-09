@@ -182,6 +182,7 @@ export class MusicController {
           initialErr.message || initialErr
         );
         ytService.invalidateStreamCache(videoId);
+        res.socket?.destroy();
         return;
       }
 
