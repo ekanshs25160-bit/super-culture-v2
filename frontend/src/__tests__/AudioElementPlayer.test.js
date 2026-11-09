@@ -472,4 +472,62 @@ describe('AudioElementPlayer Unit Tests', () => {
     await player.handleStreamStall();
     assert.equal(playCalledDuringStall, false, 'handleStreamStall must not call audio.play() when userPaused is true');
   });
+  it('preloaded next track: src is assigned and play() called synchronously with zero network requests', async () => {
+    let requests = [];
+    apiClient.music.getStreamUrl = async (videoId) => {
+      requests.push(videoId);
+      return { url: `/api/yt/stream/${videoId}?t=pre-${videoId}` };
+    };
+
+    await player.loadVideoById({ videoId: 'track-one' });
+    await player.preloadNextStreamUrl('track-two');
+    assert.deepEqual(requests, ['track-one', 'track-two']);
+    assert.equal(player._preloadedNext.videoId, 'track-two');
+
+    let playCalled = false;
+    const origPlay = player.audio.play.bind(player.audio);
+    player.audio.play = () => {
+      playCalled = true;
+      return origPlay();
+    };
+
+    // Simulates the 'ended' hand-off: no await between the call and the src/play() side effects
+    const pending = player.loadVideoById({ videoId: 'track-two', startSeconds: 0 });
+    assert.equal(player.audio.src, '/api/yt/stream/track-two?t=pre-track-two');
+    assert.equal(playCalled, true, 'play() must be invoked synchronously');
+    assert.deepEqual(player._preloadedNext, { videoId: null, url: null });
+
+    await pending;
+    assert.deepEqual(requests, ['track-one', 'track-two'], 'fast path must not fetch');
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+  });
+
+  it('falls back to the network slow-path when the next track was not preloaded', async () => {
+    let requests = [];
+    apiClient.music.getStreamUrl = async (videoId) => {
+      requests.push(videoId);
+      return { url: `/api/yt/stream/${videoId}?t=slow-${videoId}` };
+    };
+
+    await player.preloadNextStreamUrl('wrong-track');
+    await player.loadVideoById({ videoId: 'other-track' });
+
+    assert.deepEqual(requests, ['wrong-track', 'other-track']);
+    assert.equal(player.audio.src, '/api/yt/stream/other-track?t=slow-other-track');
+  });
+
+  it('does not use the fast path for a throttled preload (routes to compatibility fallback)', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=x`,
+      throttled: true,
+    });
+    let fallback = null;
+    player = new AudioElementPlayer({ onUnrecoverable: (p) => { fallback = p; } });
+
+    await player.preloadNextStreamUrl('limited-track');
+    await player.loadVideoById({ videoId: 'limited-track' });
+
+    assert.equal(player.audio.src, '');
+    assert.equal(fallback?.videoId, 'limited-track');
+  });
 });

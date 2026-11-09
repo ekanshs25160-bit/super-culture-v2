@@ -76,7 +76,10 @@ export const AudioProvider = ({ children }) => {
   const [toastMessage, setToastMessage] = useState(null);
 
   const [isPlayerReady, setIsPlayerReady] = useState(false);
+  const [playerEpoch, setPlayerEpoch] = useState(0);
   const playerRef = useRef(null);
+  // Next track chosen ahead of time (needed so shuffle skips land on the pre-resolved URL)
+  const plannedNextRef = useRef({ fromVideoId: null, track: null });
   const progressIntervalRef = useRef(null);
   const toastTimeoutRef = useRef(null);
 
@@ -182,7 +185,12 @@ export const AudioProvider = ({ children }) => {
 
   // Set Player Ref from YouTubePlayer component
   const setPlayerRef = useCallback((player) => {
-    playerRef.current = player;
+    if (playerRef.current !== player) {
+      playerRef.current = player;
+      setPlayerEpoch((n) => n + 1);
+    } else {
+      playerRef.current = player;
+    }
   }, []);
 
   const setPlayerReady = useCallback(() => {
@@ -324,6 +332,46 @@ export const AudioProvider = ({ children }) => {
     }
   }, [isEmptyPlayer, currentTrack, queue, isPlaying, playSelectedTrack, showToast]);
 
+  // Pre-resolve the next track's stream URL while the current one plays, so the ended -> play() hand-off
+  // (and lock-screen "Next") needs no network await.
+  useEffect(() => {
+    if (!currentTrack?.videoId || !Array.isArray(queue) || queue.length < 2) {
+      plannedNextRef.current = { fromVideoId: null, track: null };
+      return;
+    }
+    const currentIndex = queue.findIndex(
+      (t) => t.id === currentTrack.id || t.videoId === currentTrack.videoId
+    );
+    if (currentIndex === -1) return;
+
+    let nextTrack;
+    const planned = plannedNextRef.current;
+    const plannedStillValid =
+      isShuffle &&
+      planned.fromVideoId === currentTrack.videoId &&
+      planned.track &&
+      planned.track.videoId !== currentTrack.videoId &&
+      queue.some((t) => t.videoId === planned.track.videoId);
+    if (plannedStillValid) {
+      nextTrack = planned.track;
+    } else if (isShuffle) {
+      let idx;
+      do {
+        idx = Math.floor(Math.random() * queue.length);
+      } while (idx === currentIndex);
+      nextTrack = queue[idx];
+    } else {
+      nextTrack = queue[(currentIndex + 1) % queue.length];
+    }
+
+    plannedNextRef.current = { fromVideoId: currentTrack.videoId, track: nextTrack };
+
+    const player = playerRef.current;
+    if (nextTrack?.videoId && player && typeof player.preloadNextStreamUrl === 'function') {
+      player.preloadNextStreamUrl(nextTrack.videoId);
+    }
+  }, [currentTrack, queue, isShuffle, isPlayerReady, playerEpoch]);
+
   // Skip track forward or backward with direction (+1 or -1)
   const skipTrack = useCallback((direction = 1) => {
     if (isEmptyPlayer) {
@@ -338,7 +386,14 @@ export const AudioProvider = ({ children }) => {
     );
 
     let nextIndex;
-    if (shuffle && currentQueue.length > 1) {
+    const planned = plannedNextRef.current;
+    const plannedIndex =
+      direction === 1 && planned.track && planned.fromVideoId === (activeTrack?.videoId || null)
+        ? currentQueue.findIndex((t) => t.id === planned.track.id || (planned.track.videoId && t.videoId === planned.track.videoId))
+        : -1;
+    if (plannedIndex !== -1 && plannedIndex !== currentIndex) {
+      nextIndex = plannedIndex;
+    } else if (shuffle && currentQueue.length > 1) {
       do {
         nextIndex = Math.floor(Math.random() * currentQueue.length);
       } while (nextIndex === currentIndex);
