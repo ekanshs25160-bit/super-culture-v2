@@ -209,8 +209,9 @@ export class AudioElementPlayer {
       const data = await apiClient.music.getStreamUrl(videoId, 'aac');
       const rawUrl = data?.url || (typeof data === 'string' ? data : '');
       const resolved = resolveAudioUrl(rawUrl);
-      const throttled = Boolean(data?.throttled);
-      this.urlCache.set(videoId, { url: resolved, throttled, timestamp: Date.now() });
+      const throttled = Boolean(data?.throttled || data?.code === 'STREAM_LIMITED');
+      const reason = data?.reason || null;
+      this.urlCache.set(videoId, { url: resolved, throttled, reason, timestamp: Date.now() });
       return resolved;
     } catch (err) {
       console.warn(`[AudioElementPlayer] prepareTrack failed for ${videoId}:`, err);
@@ -285,7 +286,7 @@ export class AudioElementPlayer {
         }
 
         // 3. Fallback to network request if not pre-cached
-        if (!targetSrc) {
+        if (!targetSrc && !isThrottled) {
           targetSrc = await this.prepareTrack(videoId);
           if (token !== this.loadToken) return;
           const cached = this.urlCache.get(videoId);

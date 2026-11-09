@@ -465,33 +465,55 @@ export class YouTubeService {
 
       const contentRange = res.headers.get('content-range') || '';
       const match = contentRange.match(/\/(\d+)$/);
-      const total = match ? parseInt(match[1], 10) : 0;
+      const contentLengthHeader = res.headers.get('content-length');
+      const total = match
+        ? parseInt(match[1], 10)
+        : contentLengthHeader
+        ? parseInt(contentLengthHeader, 10)
+        : 0;
 
-      if (total > 1048600) {
-        const deepController = new AbortController();
-        const deepTimeout = setTimeout(() => deepController.abort(), 4000);
-        try {
-          const deepRes = await fetch(url, {
-            method: 'GET',
-            headers: {
-              'User-Agent': userAgent,
-              Range: 'bytes=1048576-1048600',
-            },
-            signal: deepController.signal,
-          });
-          clearTimeout(deepTimeout);
+      if (total > 1_100_000) {
+        const probes: Array<{ start: number; end: number }> = [
+          { start: total - 64, end: total - 1 },
+        ];
+        if (total > 2_097_152) {
+          probes.push({ start: 1572864, end: 1572900 });
+        }
 
+        for (const { start, end } of probes) {
+          const expectedLength = end - start + 1;
+          const deepController = new AbortController();
+          const deepTimeout = setTimeout(() => deepController.abort(), 4000);
           try {
-            await deepRes.arrayBuffer();
-          } catch {}
+            const deepRes = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'User-Agent': userAgent,
+                Range: `bytes=${start}-${end}`,
+              },
+              signal: deepController.signal,
+            });
+            clearTimeout(deepTimeout);
 
-          if (deepRes.status === 206) {
-            return { ok: true, throttled: false };
+            let bodyLen = 0;
+            try {
+              const buf = await deepRes.arrayBuffer();
+              bodyLen = buf.byteLength;
+            } catch {}
+
+            if (deepRes.status === 206) {
+              continue;
+            }
+            const clHeader = deepRes.headers.get('content-length');
+            const reportedLen = clHeader ? parseInt(clHeader, 10) : bodyLen;
+            if (deepRes.status === 200 && (reportedLen === expectedLength || bodyLen === expectedLength)) {
+              continue;
+            }
+            return { ok: true, throttled: true };
+          } catch (_deepErr) {
+            clearTimeout(deepTimeout);
+            return { ok: true, throttled: true };
           }
-          return { ok: true, throttled: true };
-        } catch (_deepErr) {
-          clearTimeout(deepTimeout);
-          return { ok: true, throttled: true };
         }
       }
 
@@ -565,8 +587,16 @@ export class YouTubeService {
     }
 
     if (fallbackThrottledEntry) {
-      this.streamCache.set(cacheKey, fallbackThrottledEntry);
-      return fallbackThrottledEntry;
+      const negativeTtlMs = 1000 * 60 * 30; // 30 minutes negative cache
+      const limitedEntry: StreamEntry = {
+        ...fallbackThrottledEntry,
+        throttled: true,
+        code: 'STREAM_LIMITED',
+        reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+        expiresAt: Date.now() + negativeTtlMs,
+      };
+      this.streamCache.set(cacheKey, limitedEntry, { ttl: negativeTtlMs });
+      return limitedEntry;
     }
 
     throw new Error('No client returned a playable stream');
