@@ -24,6 +24,7 @@ export class AudioElementPlayer {
     this.currentVideoId = null;
     this.currentSrc = null;
     this.currentBlobUrl = null;
+    this.cuedOnly = false;
     this.hasRetried = false;
     this.isRefreshing = false;
     this.userPaused = false;
@@ -94,7 +95,7 @@ export class AudioElementPlayer {
         }
         this.isUnlocking = false;
       }
-    } catch (_err) {
+    } catch {
       this.isUnlocking = false;
     }
   }
@@ -229,6 +230,7 @@ export class AudioElementPlayer {
     if (!videoId) return;
 
     this.currentVideoId = videoId;
+    this.cuedOnly = false;
     this.hasRetried = false;
     this.isRefreshing = false;
     this.userPaused = false;
@@ -362,88 +364,36 @@ export class AudioElementPlayer {
     return loadTask;
   }
 
-  async cueVideoById({ videoId, startSeconds = 0 }) {
+  async cueVideoById({ videoId, startSeconds = 0 } = {}) {
+    if (!videoId) return;
     this.currentVideoId = videoId;
+    this._lastKnownTime = Math.max(0, Number(startSeconds) || 0);
+    this.cuedOnly = true;
     this.hasRetried = false;
     this.isRefreshing = false;
-    this.userPaused = false;
-    this._lastKnownTime = Math.max(0, Number(startSeconds) || 0);
+    this.userPaused = true;
     this.state = PlayerState.CUED;
     this.emit('onStateChange', PlayerState.CUED);
-
-    this.initAudioElement();
-
-    if (this.currentBlobUrl) {
-      try {
-        URL.revokeObjectURL(this.currentBlobUrl);
-      } catch (_revokeErr) {
-        void _revokeErr;
-      }
-      this.currentBlobUrl = null;
-    }
-
-    let offlineBlobUrl = null;
-    if (typeof caches !== 'undefined') {
-      try {
-        const cache = await caches.open('sc-offline-audio');
-        const match = await cache.match(`/offline-audio/${videoId}`);
-        if (match) {
-          const blob = await match.blob();
-          if (blob && blob.size > 0) {
-            offlineBlobUrl = URL.createObjectURL(blob);
-            this.currentBlobUrl = offlineBlobUrl;
-          }
-        }
-      } catch (_cacheErr) {
-        void _cacheErr;
-      }
-    }
-
-    try {
-      let targetSrc = offlineBlobUrl;
-      let isThrottled = false;
-      if (!targetSrc) {
-        const cached = this.urlCache.get(videoId);
-        if (cached && Date.now() - cached.timestamp < 100 * 60 * 1000) {
-          targetSrc = cached.url;
-          isThrottled = Boolean(cached.throttled);
-        } else {
-          targetSrc = await this.prepareTrack(videoId);
-          const fresh = this.urlCache.get(videoId);
-          if (fresh) {
-            isThrottled = Boolean(fresh.throttled);
-          }
-        }
-      }
-
-      if (isThrottled) {
-        const fallbackPayload = {
-          videoId,
-          seconds: Math.max(0, Number(startSeconds) || 0),
-          reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
-        };
-        if (typeof this.options?.onUnrecoverable === 'function') {
-          this.options.onUnrecoverable(fallbackPayload);
-        }
-        this.emit('onThrottled', fallbackPayload);
-        this.emit('onUnrecoverable', fallbackPayload);
-        return;
-      }
-
-      this.currentSrc = targetSrc;
-      if (this.audio && targetSrc) {
-        this.audio.src = targetSrc;
-        if (startSeconds > 0) {
-          this.audio.currentTime = startSeconds;
-        }
-      }
-    } catch (err) {
-      console.warn('[AudioElementPlayer] Failed to cue stream URL:', err);
-    }
   }
 
   async playVideo() {
+    this.initAudioElement();
     if (!this.audio) return;
+
+    const needsInitialLoad =
+      this.cuedOnly ||
+      ((!this.audio.src || this.audio.src.startsWith('data:audio')) &&
+        Boolean(this.currentVideoId) &&
+        !this.loadPromise);
+
+    if (needsInitialLoad && this.currentVideoId) {
+      this.cuedOnly = false;
+      return this.loadVideoById({
+        videoId: this.currentVideoId,
+        startSeconds: this._lastKnownTime || 0,
+      });
+    }
+
     this.userPaused = false;
 
     try {
@@ -451,7 +401,7 @@ export class AudioElementPlayer {
         await this.loadPromise;
       }
 
-      if (this.userPaused || !this.audio.src) {
+      if (this.userPaused || !this.audio.src || this.audio.src.startsWith('data:audio')) {
         return;
       }
 
@@ -488,6 +438,7 @@ export class AudioElementPlayer {
   stopVideo() {
     this.loadToken++;
     this.loadPromise = null;
+    this.cuedOnly = false;
     this.userPaused = true;
     this.isRefreshing = false;
     this._lastKnownTime = 0;
@@ -499,9 +450,11 @@ export class AudioElementPlayer {
   }
 
   seekTo(seconds) {
-    if (!this.audio) return;
     const target = Math.max(0, Number(seconds) || 0);
     this._lastKnownTime = target;
+    if (this.cuedOnly || !this.audio || this.audio.src?.startsWith('data:audio')) {
+      return;
+    }
     try {
       this.audio.currentTime = target;
     } catch (err) {

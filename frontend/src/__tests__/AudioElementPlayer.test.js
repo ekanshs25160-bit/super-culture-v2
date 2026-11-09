@@ -411,4 +411,65 @@ describe('AudioElementPlayer Unit Tests', () => {
     assert.deepEqual(throttledEventPayload, fallbackPayload);
     assert.equal(player.hasRetried, true);
   });
+
+  it('A5: restoring a saved state at 91s via cueVideoById makes zero network requests and emits no error; clicking play then loads at 91s', async () => {
+    let networkRequests = 0;
+    apiClient.music.getStreamUrl = async (videoId) => {
+      networkRequests++;
+      return { url: `/api/yt/stream/${videoId}?t=lazy-cue-token` };
+    };
+
+    let emittedError = null;
+    let emittedStates = [];
+    player.on('onError', (code, err) => {
+      emittedError = { code, err };
+    });
+    player.on('onStateChange', (s) => {
+      emittedStates.push(s);
+    });
+
+    // 1. Restore saved state at 91s
+    await player.cueVideoById({ videoId: 'saved-track-91', startSeconds: 91 });
+
+    assert.equal(networkRequests, 0, 'cueVideoById must make zero network requests');
+    assert.equal(player.audio.src, '', 'cueVideoById must NOT set audio.src');
+    assert.equal(player.audio.currentTime, 0, 'cueVideoById must NOT set audio.currentTime');
+    assert.equal(player.userPaused, true, 'cueVideoById must set userPaused=true');
+    assert.equal(player.currentVideoId, 'saved-track-91');
+    assert.equal(player._lastKnownTime, 91);
+    assert.equal(player.getCurrentTime(), 91);
+    assert.equal(player.getPlayerState(), PlayerState.CUED);
+    assert.deepEqual(emittedStates, [PlayerState.CUED]);
+    assert.equal(emittedError, null, 'cueVideoById must emit no error');
+
+    // 2. Clicking play (even after synchronous unlock) loads at 91s
+    player.unlock();
+    await player.playVideo();
+
+    assert.equal(networkRequests, 1, 'First playVideo() fetches stream URL once');
+    assert.equal(player.audio.src, '/api/yt/stream/saved-track-91?t=lazy-cue-token');
+    assert.equal(player.audio.currentTime, 91, 'First playVideo() seeks to saved 91s position');
+    assert.equal(player.getPlayerState(), PlayerState.PLAYING);
+    assert.equal(emittedError, null);
+  });
+
+  it('A5: handleStreamStall does not call audio.play() when userPaused is true', async () => {
+    apiClient.music.getStreamUrl = async (videoId) => ({
+      url: `/api/yt/stream/${videoId}?t=stall-paused-token`,
+    });
+
+    await player.loadVideoById({ videoId: 'paused-stall-track', startSeconds: 30 });
+    player.pauseVideo();
+    assert.equal(player.userPaused, true);
+
+    let playCalledDuringStall = false;
+    const origPlay = player.audio.play.bind(player.audio);
+    player.audio.play = async () => {
+      playCalledDuringStall = true;
+      return origPlay();
+    };
+
+    await player.handleStreamStall();
+    assert.equal(playCalledDuringStall, false, 'handleStreamStall must not call audio.play() when userPaused is true');
+  });
 });
