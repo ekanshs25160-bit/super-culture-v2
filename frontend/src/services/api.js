@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Capacitor } from '@capacitor/core';
 
 const GUEST_ID_KEY = 'super_culture_guest_id';
 
@@ -93,15 +92,6 @@ api.interceptors.response.use(
   }
 );
 
-import {
-  getNativeYtClient,
-  resolveNativeStreamUrl,
-} from './nativeStream.js';
-export {
-  getNativeYtClient,
-  resolveNativeStreamUrl,
-};
-
 /**
  * Super Culture API Endpoint Handlers
  */
@@ -169,29 +159,8 @@ export const apiClient = {
   // Music Streaming API
   music: {
     getStreamUrl: async (videoId, prefer = 'aac') => {
-      // 1. Mobile Native Branch (Capacitor on iOS / Android)
-      // Hits YouTube directly using the iOS client profile (bypasses browser CORS natively)
-      if (Capacitor.isNativePlatform()) {
-        try {
-          return await resolveNativeStreamUrl(videoId, prefer);
-        } catch (nativeErr) {
-          console.warn('[apiClient] Native YouTube stream resolution failed, falling back to desktop proxy:', nativeErr);
-        }
-      }
-
-      // 2. Desktop Web Branch (Local Node.js backend proxy)
-      try {
-        const res = await api.post('/music/stream-url', { videoId, prefer });
-        return res.data;
-      } catch {
-        // Direct desktop proxy fallback: GET http://localhost:5001/api/yt/stream/:videoId
-        const desktopHost = API_BASE || 'http://localhost:5001';
-        return {
-          url: `${desktopHost}/api/yt/stream/${videoId}`,
-          videoId,
-          expiresIn: 300,
-        };
-      }
+      const res = await api.post('/music/stream-url', { videoId, prefer });
+      return res.data;
     },
     getHomeShelves: async () => {
       const res = await api.get('/music/home-shelves');
