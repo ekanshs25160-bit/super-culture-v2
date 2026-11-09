@@ -4,6 +4,7 @@ import { useUiStore } from '../store/useUiStore';
 import { AudioElementPlayer } from '../engine/AudioElementPlayer';
 import { resolveEffectiveEngine, isMobileDevice } from '../engine/PlayerConstants';
 import { createPlaybackEventHandler } from '../engine/playbackEventHandler';
+import { bindAudioPlayerLoadTracking, syncAudioEngineTrack } from '../engine/trackTransitionSync';
 import YouTubePlayer from './YouTubePlayer';
 
 export const COMPAT_MODE_NOTICE = 'Compatibility mode: lock-screen and background playback are unavailable for this track.';
@@ -13,6 +14,7 @@ const AudioEngineHost = memo(function AudioEngineHost() {
     currentTrack,
     queue,
     currentTime,
+    isPlaying,
     setPlayerRef,
     skipTrack,
     skipNext,
@@ -45,6 +47,7 @@ const AudioEngineHost = memo(function AudioEngineHost() {
 
   const effectiveEngine = temporaryEngineOverride || resolveEffectiveEngine(playbackEngine);
   const audioPlayerRef = useRef(null);
+  const lastLoadedVideoId = useRef(null);
   const handlerRef = useRef(null);
   const mobileRetriedRef = useRef(false);
   // Last playback position reported by the audio element, kept per video so it survives element resets on error
@@ -138,7 +141,7 @@ const AudioEngineHost = memo(function AudioEngineHost() {
         }
       },
     });
-  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, currentTrack]);
+  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, currentTrack, setLastFallbackReason, setTemporaryEngineOverride]);
 
   // Compatibility mode is per track: once the queue moves on, try the audio stream again
   useEffect(() => {
@@ -158,9 +161,15 @@ const AudioEngineHost = memo(function AudioEngineHost() {
   // AudioElement engine lifecycle
   useEffect(() => {
     if (effectiveEngine !== 'audio') {
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pauseVideo();
-      }
+      syncAudioEngineTrack({
+        effectiveEngine,
+        currentTrack,
+        isPlaying,
+        currentTime,
+        audioPlayer: audioPlayerRef.current,
+        lastLoadedVideoIdRef: lastLoadedVideoId,
+        setPlayerRef,
+      });
       return;
     }
 
@@ -168,6 +177,7 @@ const AudioEngineHost = memo(function AudioEngineHost() {
       const player = new AudioElementPlayer({
         onUnrecoverable: (payload) => triggerFallbackRef.current?.(payload),
       });
+      bindAudioPlayerLoadTracking(player, lastLoadedVideoId);
       audioPlayerRef.current = player;
 
       player.on('onThrottled', (payload) => {
@@ -228,22 +238,23 @@ const AudioEngineHost = memo(function AudioEngineHost() {
       setPlayerRef(player);
       setPlayerReady();
       player.setVolume(Math.round((volume || 0.74) * 100));
-
-      if (currentTrack?.videoId) {
-        player.cueVideoById({
-          videoId: currentTrack.videoId,
-          startSeconds: currentTime || 0,
-        });
-      }
-    } else {
-      setPlayerRef(audioPlayerRef.current);
     }
+
+    syncAudioEngineTrack({
+      effectiveEngine,
+      currentTrack,
+      isPlaying,
+      currentTime,
+      audioPlayer: audioPlayerRef.current,
+      lastLoadedVideoIdRef: lastLoadedVideoId,
+      setPlayerRef,
+    });
 
     return () => {
       // Retain instance across renders; cleanup on unmount handled in player
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveEngine, setPlayerRef, setPlayerReady, setAutoplayBlocked, volume, queue, currentTrack]);
+  }, [effectiveEngine, setPlayerRef, setPlayerReady, setAutoplayBlocked, volume, queue, currentTrack, isPlaying]);
 
   // If using YouTube engine, render headless iframe component
   if (effectiveEngine === 'youtube') {

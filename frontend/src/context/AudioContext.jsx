@@ -1,6 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useEffect, useState, useRef, useCallback } from 'react';
 import playbackPersistence from '../services/playbackPersistence';
+import { useUiStore } from '../store/useUiStore';
+import { prepareTrackSelection } from '../engine/trackTransitionSync';
 
 export const AudioContext = createContext({
   currentTrack: null,
@@ -198,6 +200,14 @@ export const AudioProvider = ({ children }) => {
   const playSelectedTrack = useCallback(async (track, customQueue = null) => {
     if (!track) return;
 
+    const previousTrackVideoId = stateRef.current.currentTrack?.videoId || null;
+    const { shouldLoadOnPlayerRef, isSameTrack } = prepareTrackSelection({
+      track,
+      currentTrackVideoId: previousTrackVideoId,
+      playerRef,
+      uiStore: useUiStore,
+    });
+
     // Synchronously unlock audio on the native player inside user gesture BEFORE any await!
     if (playerRef.current && typeof playerRef.current.unlock === 'function') {
       playerRef.current.unlock();
@@ -229,12 +239,22 @@ export const AudioProvider = ({ children }) => {
     }
 
     setCurrentTrack(track);
-    setCurrentTime(0);
+    if (!isSameTrack) {
+      setCurrentTime(0);
+    }
     if (track.seconds) {
       setDuration(track.seconds);
     }
 
-    if (playerRef.current && track.videoId) {
+    if (isSameTrack) {
+      if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+        try {
+          await playerRef.current.playVideo();
+        } catch (err) {
+          console.warn('[AudioContext] Could not resume same track:', err);
+        }
+      }
+    } else if (shouldLoadOnPlayerRef && playerRef.current && track.videoId) {
       try {
         await playerRef.current.loadVideoById({
           videoId: track.videoId,
