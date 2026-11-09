@@ -344,5 +344,15 @@ describe('Super Culture v2.0 - Backend Hardening & Speed Suite', () => {
       assert.equal(res.body.ok, true);
       assert.equal(res.body.status, 206);
     });
+
+    it('A6: allows 40 ranged GET /api/yt/stream/:videoId requests within a minute with a valid signed token (all HTTP 206)', async () => {
+      const validToken = createStreamToken(TEST_VIDEO_ID);
+      for (let i = 0; i < 40; i++) {
+        const res = await request(app)
+          .get(`/api/yt/stream/${TEST_VIDEO_ID}?t=${validToken}`)
+          .set('Range', 'bytes=0-1024');
+        assert.equal(res.status, 206, `Request #${i + 1} must succeed with 206, got ${res.status}`);
+      }
+    });
   });
 });

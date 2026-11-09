@@ -8,7 +8,7 @@ const searchTracks = (req: any, res: any) => musicController.search(req, res);
 
 router.get('/search', searchTracks);
 router.get('/artist/:name', getArtist);
-router.post('/stream-url', (req, res) => musicController.getStreamUrl(req, res));
+router.post('/stream-url', streamRateLimiter, (req, res) => musicController.getStreamUrl(req, res));
 router.route('/stream/:videoId')
   .get(streamRateLimiter, (req, res) => musicController.stream(req, res))
   .head(streamRateLimiter, (req, res) => musicController.stream(req, res));
