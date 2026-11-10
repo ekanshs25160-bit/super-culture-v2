@@ -44,6 +44,8 @@ export interface StreamEntry {
   expiresAt: number;
   client?: 'IOS' | 'MWEB' | 'MUSIC' | string;
   throttled?: boolean;
+  code?: 'STREAM_LIMITED' | string;
+  reason?: string;
 }
 
 export interface UserProfile {

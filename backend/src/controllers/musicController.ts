@@ -110,9 +110,19 @@ export class MusicController {
         prefer === 'aac' ? 'aac' : 'best'
       );
 
+      if (streamInfo.throttled || streamInfo.code === 'STREAM_LIMITED') {
+        res.json({
+          url,
+          throttled: true,
+          code: 'STREAM_LIMITED',
+          reason: streamInfo.reason || 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+        });
+        return;
+      }
+
       res.json({
         url,
-        throttled: Boolean(streamInfo.throttled),
+        throttled: false,
       });
     } catch (err: any) {
       console.error('[MusicController] stream-url generation error:', err.message);
@@ -172,6 +182,7 @@ export class MusicController {
           initialErr.message || initialErr
         );
         ytService.invalidateStreamCache(videoId);
+        res.socket?.destroy();
         return;
       }
 

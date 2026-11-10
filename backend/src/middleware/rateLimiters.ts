@@ -1,4 +1,24 @@
 import rateLimit from 'express-rate-limit';
+import type { Request } from 'express';
+import { verifyStreamToken } from '../services/tokenService.js';
+
+export function hasValidSignedStreamToken(req: Request): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return false;
+  }
+  const token = typeof req.query?.t === 'string' ? req.query.t : undefined;
+  if (!token) {
+    return false;
+  }
+  const paramId = typeof req.params?.videoId === 'string' ? req.params.videoId : undefined;
+  const pathMatch = req.path?.match(/\/stream\/([^/?#]+)/);
+  const videoId = paramId || pathMatch?.[1];
+  if (!videoId) {
+    return false;
+  }
+  const verification = verifyStreamToken(videoId, token);
+  return verification.valid && !verification.expired;
+}
 
 // General API rate limiter
 export const apiRateLimiter = rateLimit({
@@ -6,6 +26,7 @@ export const apiRateLimiter = rateLimit({
   max: 300, // 300 requests per window
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => hasValidSignedStreamToken(req),
   handler: (_req, res) => {
     res.status(429).json({
       error: 'Too many requests, please try again later.',
@@ -26,12 +47,13 @@ export const aiRateLimiter = rateLimit({
   },
 });
 
-// Stricter limiter for streaming proxy (/api/music/stream/* and /api/yt/stream/*)
+// Limiter for POST /api/music/stream-url (60/min per IP); skips GET/HEAD /stream/:id with valid signed token
 export const streamRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 stream requests per minute per IP
+  max: 60, // 60 stream-url requests per minute per IP
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => hasValidSignedStreamToken(req),
   handler: (_req, res) => {
     res.status(429).json({
       error: 'Too many audio stream requests from this IP, please slow down.',

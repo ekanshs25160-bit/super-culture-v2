@@ -3,10 +3,26 @@ import { Innertube, UniversalCache, ClientType } from 'youtubei.js';
 import { LRUCache } from 'lru-cache';
 import { TrackMeta, StreamEntry, ArtistMeta, SearchResultPayload } from '../types/index.js';
 
-const CLIENT_ORDER = ['IOS', 'MWEB', 'MUSIC'] as const;
+export const DEFAULT_CLIENT_ORDER = ['VISIONOS', 'IOS', 'MWEB', 'MUSIC'] as const;
+
+export const VISIONOS_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15';
+
+export const getClientOrder = (): string[] => {
+  const envOrder = process.env.YT_CLIENT_ORDER;
+  if (envOrder && envOrder.trim().length > 0) {
+    return envOrder
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+  }
+  return [...DEFAULT_CLIENT_ORDER];
+};
 
 export const getClientUserAgent = (clientName?: string): string => {
   switch (clientName) {
+    case 'VISIONOS':
+      return VISIONOS_USER_AGENT;
     case 'IOS':
       return 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)';
     case 'ANDROID':
@@ -465,33 +481,55 @@ export class YouTubeService {
 
       const contentRange = res.headers.get('content-range') || '';
       const match = contentRange.match(/\/(\d+)$/);
-      const total = match ? parseInt(match[1], 10) : 0;
+      const contentLengthHeader = res.headers.get('content-length');
+      const total = match
+        ? parseInt(match[1], 10)
+        : contentLengthHeader
+        ? parseInt(contentLengthHeader, 10)
+        : 0;
 
-      if (total > 1048600) {
-        const deepController = new AbortController();
-        const deepTimeout = setTimeout(() => deepController.abort(), 4000);
-        try {
-          const deepRes = await fetch(url, {
-            method: 'GET',
-            headers: {
-              'User-Agent': userAgent,
-              Range: 'bytes=1048576-1048600',
-            },
-            signal: deepController.signal,
-          });
-          clearTimeout(deepTimeout);
+      if (total > 1_100_000) {
+        const probes: Array<{ start: number; end: number }> = [
+          { start: total - 64, end: total - 1 },
+        ];
+        if (total > 2_097_152) {
+          probes.push({ start: 1572864, end: 1572900 });
+        }
 
+        for (const { start, end } of probes) {
+          const expectedLength = end - start + 1;
+          const deepController = new AbortController();
+          const deepTimeout = setTimeout(() => deepController.abort(), 4000);
           try {
-            await deepRes.arrayBuffer();
-          } catch {}
+            const deepRes = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'User-Agent': userAgent,
+                Range: `bytes=${start}-${end}`,
+              },
+              signal: deepController.signal,
+            });
+            clearTimeout(deepTimeout);
 
-          if (deepRes.status === 206) {
-            return { ok: true, throttled: false };
+            let bodyLen = 0;
+            try {
+              const buf = await deepRes.arrayBuffer();
+              bodyLen = buf.byteLength;
+            } catch {}
+
+            if (deepRes.status === 206) {
+              continue;
+            }
+            const clHeader = deepRes.headers.get('content-length');
+            const reportedLen = clHeader ? parseInt(clHeader, 10) : bodyLen;
+            if (deepRes.status === 200 && (reportedLen === expectedLength || bodyLen === expectedLength)) {
+              continue;
+            }
+            return { ok: true, throttled: true };
+          } catch (_deepErr) {
+            clearTimeout(deepTimeout);
+            return { ok: true, throttled: true };
           }
-          return { ok: true, throttled: true };
-        } catch (_deepErr) {
-          clearTimeout(deepTimeout);
-          return { ok: true, throttled: true };
         }
       }
 
@@ -502,6 +540,141 @@ export class YouTubeService {
     }
   }
 
+  private watchPageCache: { visitorData: string; sts: number; expiresAt: number } | null = null;
+  private watchPageInflight: Promise<{ visitorData: string; sts: number }> | null = null;
+
+  public async getWatchPageContext(
+    videoId: string,
+    forceRefresh = false
+  ): Promise<{ visitorData: string; sts: number }> {
+    if (!forceRefresh && this.watchPageCache && this.watchPageCache.expiresAt > Date.now()) {
+      return { visitorData: this.watchPageCache.visitorData, sts: this.watchPageCache.sts };
+    }
+    if (!forceRefresh && this.watchPageInflight) {
+      return this.watchPageInflight;
+    }
+
+    const task = (async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(
+          `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&bpctr=9999999999&has_verified=1`,
+          {
+            method: 'GET',
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+            signal: controller.signal,
+          }
+        );
+        clearTimeout(timeout);
+        const html = await res.text();
+        const vdMatch = html.match(/"VISITOR_DATA":"([^"]+)"/) || html.match(/"visitorData":"([^"]+)"/);
+        const stsMatch = html.match(/"STS":(\d+)/);
+        const visitorData = vdMatch ? vdMatch[1] : '';
+        const sts = stsMatch ? parseInt(stsMatch[1], 10) : 20760;
+
+        if (visitorData) {
+          this.watchPageCache = {
+            visitorData,
+            sts,
+            expiresAt: Date.now() + 1000 * 60 * 30, // 30 minutes TTL
+          };
+        }
+        return { visitorData, sts };
+      } finally {
+        clearTimeout(timeout);
+        this.watchPageInflight = null;
+      }
+    })();
+
+    this.watchPageInflight = task;
+    return task;
+  }
+
+  public async fetchVisionOsInfo(videoId: string): Promise<any> {
+    const callPlayer = async (visitorData: string, sts: number) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-YouTube-Client-Name': '101',
+            'X-YouTube-Client-Version': '1.02',
+            Origin: 'https://www.youtube.com',
+            'User-Agent': VISIONOS_USER_AGENT,
+            ...(visitorData ? { 'X-Goog-Visitor-Id': visitorData } : {}),
+          },
+          body: JSON.stringify({
+            context: {
+              client: {
+                clientName: 'VISIONOS',
+                clientVersion: '1.02',
+                deviceMake: 'Apple',
+                deviceModel: 'RealityDevice17,1',
+                userAgent: VISIONOS_USER_AGENT,
+                osName: 'visionOS',
+                osVersion: '26.5.23O471',
+                hl: 'en',
+                timeZone: 'UTC',
+                utcOffsetMinutes: 0,
+              },
+            },
+            videoId,
+            playbackContext: {
+              contentPlaybackContext: {
+                html5Preference: 'HTML5_PREF_WANTS',
+                signatureTimestamp: sts,
+              },
+            },
+            contentCheckOk: true,
+            racyCheckOk: true,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        return (await res.json()) as any;
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    let ctx = await this.getWatchPageContext(videoId, false);
+    let data = await callPlayer(ctx.visitorData, ctx.sts);
+
+    if (data?.playabilityStatus?.status !== 'OK' || !data?.streamingData) {
+      ctx = await this.getWatchPageContext(videoId, true);
+      data = await callPlayer(ctx.visitorData, ctx.sts);
+    }
+
+    const rawAdaptive = [
+      ...(data?.streamingData?.adaptiveFormats || []),
+      ...(data?.streamingData?.formats || []),
+    ];
+
+    const normalizedFormats = rawAdaptive.map((f: any) => ({
+      itag: f.itag,
+      url: f.url,
+      mime_type: f.mimeType || '',
+      bitrate: f.bitrate || f.averageBitrate || 0,
+      content_length: f.contentLength ? parseInt(String(f.contentLength), 10) : undefined,
+      has_audio: Boolean((f.mimeType && f.mimeType.startsWith('audio/')) || f.audioQuality),
+    }));
+
+    return {
+      playability_status: {
+        status: data?.playabilityStatus?.status,
+        reason: data?.playabilityStatus?.reason,
+      },
+      streaming_data: normalizedFormats.length > 0 ? { adaptive_formats: normalizedFormats } : null,
+    };
+  }
+
   public async resolveAudioStream(videoId: string, prefer?: 'aac' | 'best'): Promise<StreamEntry> {
     const cacheKey = `${videoId}:${prefer || 'best'}`;
     const cached = this.streamCache.get(cacheKey);
@@ -509,14 +682,23 @@ export class YouTubeService {
       return cached;
     }
 
-    const client = await this.getClient();
+    let client: Innertube | null = null;
     let fallbackThrottledEntry: StreamEntry | null = null;
+    const clientOrder = getClientOrder();
 
-    for (const name of CLIENT_ORDER) {
+    for (const name of clientOrder) {
       try {
-        const info = name === 'MUSIC'
-          ? await client.music.getInfo(videoId)
-          : await client.getBasicInfo(videoId, { client: name });
+        let info: any;
+        if (name === 'VISIONOS') {
+          info = await this.fetchVisionOsInfo(videoId);
+        } else {
+          if (!client) {
+            client = await this.getClient();
+          }
+          info = name === 'MUSIC'
+            ? await client.music.getInfo(videoId)
+            : await client.getBasicInfo(videoId, { client: name as any });
+        }
 
         if (!info.streaming_data) {
           console.warn(`[ytService] ${videoId}: ${name} gave no formats (${info.playability_status?.status}: ${info.playability_status?.reason ?? ''})`);
@@ -529,7 +711,11 @@ export class YouTubeService {
           continue;
         }
 
-        const url = format.url ?? (typeof format.decipher === 'function' ? await format.decipher(client.session.player) : undefined);
+        const url =
+          format.url ??
+          (typeof format.decipher === 'function' && client
+            ? await format.decipher(client.session.player)
+            : undefined);
 
         if (!url) {
           continue;
@@ -565,8 +751,16 @@ export class YouTubeService {
     }
 
     if (fallbackThrottledEntry) {
-      this.streamCache.set(cacheKey, fallbackThrottledEntry);
-      return fallbackThrottledEntry;
+      const negativeTtlMs = 1000 * 60 * 30; // 30 minutes negative cache
+      const limitedEntry: StreamEntry = {
+        ...fallbackThrottledEntry,
+        throttled: true,
+        code: 'STREAM_LIMITED',
+        reason: 'Stream throttled by YouTube • Compatibility mode (YouTube)',
+        expiresAt: Date.now() + negativeTtlMs,
+      };
+      this.streamCache.set(cacheKey, limitedEntry, { ttl: negativeTtlMs });
+      return limitedEntry;
     }
 
     throw new Error('No client returned a playable stream');

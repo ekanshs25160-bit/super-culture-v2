@@ -1,17 +1,22 @@
 /* global global */
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
   resolveEffectiveEngine,
   isMobileDevice,
+  isMobileOrTouchDevice,
+  isMobileViewport,
   PlaybackEngine,
+  AUDIO_ENGINE_ENABLED,
+  setAudioEngineEnabled,
 } from '../engine/PlayerConstants.js';
 
 function setNavigator(props) {
   Object.defineProperty(globalThis, 'navigator', {
     value: {
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       maxTouchPoints: 0,
       standalone: false,
       ...props,
@@ -21,7 +26,7 @@ function setNavigator(props) {
   });
 }
 
-describe('PlayerConstants & resolveEffectiveEngine Suite', () => {
+describe('PlayerConstants & resolveEffectiveEngine Suite (A7)', () => {
   beforeEach(() => {
     // Reset browser globals to standard desktop environment before each test
     global.window = {
@@ -29,13 +34,43 @@ describe('PlayerConstants & resolveEffectiveEngine Suite', () => {
       matchMedia: () => ({ matches: false }),
     };
     setNavigator({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       maxTouchPoints: 0,
       standalone: false,
     });
   });
 
-  describe('1. Explicit Preference Enforcement', () => {
+  afterEach(() => {
+    setAudioEngineEnabled(true);
+    delete globalThis.AUDIO_ENGINE_ENABLED;
+  });
+
+  describe('0. AUDIO_ENGINE_ENABLED Flag Behavior', () => {
+    it('enables AUDIO_ENGINE_ENABLED by default after Part B and forces YouTube iframe when set to false', () => {
+      assert.equal(AUDIO_ENGINE_ENABLED, true);
+
+      setAudioEngineEnabled(false);
+
+      // Desktop
+      assert.equal(resolveEffectiveEngine('Auto'), 'youtube');
+
+      // Mobile iPhone UA when AUDIO_ENGINE_ENABLED is false
+      setNavigator({
+        userAgent:
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      });
+      global.window.innerWidth = 390;
+      assert.equal(resolveEffectiveEngine('Auto'), 'youtube');
+      assert.equal(resolveEffectiveEngine(PlaybackEngine.AUDIO), 'youtube');
+    });
+  });
+
+  describe('1. Explicit Preference Enforcement (when AUDIO_ENGINE_ENABLED = true)', () => {
+    beforeEach(() => {
+      setAudioEngineEnabled(true);
+    });
+
     it('always returns "audio" when preference is AUDIO stream regardless of device', () => {
       assert.equal(resolveEffectiveEngine(PlaybackEngine.AUDIO), 'audio');
       assert.equal(resolveEffectiveEngine('Audio stream'), 'audio');
@@ -43,7 +78,6 @@ describe('PlayerConstants & resolveEffectiveEngine Suite', () => {
     });
 
     it('always returns "youtube" when preference is YOUTUBE player regardless of device', () => {
-      // Even on mobile environment, explicit youtube choice is respected
       global.window.innerWidth = 375;
       setNavigator({ userAgent: 'iPhone' });
 
@@ -53,14 +87,20 @@ describe('PlayerConstants & resolveEffectiveEngine Suite', () => {
     });
   });
 
-  describe('2. Auto Mode Mobile Detection Matrix', () => {
-    it('detects mobile from Android / iPhone User-Agent regex', () => {
+  describe('2. Auto Mode Mobile & Touch Detection Matrix (when AUDIO_ENGINE_ENABLED = true)', () => {
+    beforeEach(() => {
+      setAudioEngineEnabled(true);
+    });
+
+    it('detects mobile/tablet from Android / iPhone / iPad User-Agent regex', () => {
       setNavigator({
-        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        userAgent:
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
       });
-      global.window.innerWidth = 1200; // Even if reported viewport is wide
+      global.window.innerWidth = 1200;
 
       assert.equal(isMobileDevice(), true);
+      assert.equal(isMobileOrTouchDevice(), true);
       assert.equal(resolveEffectiveEngine('Auto'), 'audio');
     });
 
@@ -74,12 +114,23 @@ describe('PlayerConstants & resolveEffectiveEngine Suite', () => {
       assert.equal(resolveEffectiveEngine('Auto'), 'audio');
     });
 
-    it('detects iPad on iOS 13+ (reports as Macintosh with multi-touch > 1)', () => {
+    it('detects iPadOS on iOS 13+ (reports as Macintosh with multi-touch > 1)', () => {
       setNavigator({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15',
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15',
         maxTouchPoints: 5,
       });
       global.window.innerWidth = 1024;
+
+      assert.equal(isMobileDevice(), true);
+      assert.equal(resolveEffectiveEngine('Auto'), 'audio');
+    });
+
+    it('detects touch-primary device via matchMedia("(pointer: coarse)")', () => {
+      global.window.matchMedia = (query) => ({
+        matches: query === '(pointer: coarse)',
+      });
+      global.window.innerWidth = 1280;
 
       assert.equal(isMobileDevice(), true);
       assert.equal(resolveEffectiveEngine('Auto'), 'audio');
@@ -94,10 +145,20 @@ describe('PlayerConstants & resolveEffectiveEngine Suite', () => {
       assert.equal(resolveEffectiveEngine('Auto'), 'audio');
     });
 
-    it('detects narrow viewport (< 1024px)', () => {
-      global.window.innerWidth = 820; // tablet / phone viewport
-      assert.equal(isMobileDevice(), true);
-      assert.equal(resolveEffectiveEngine('Auto'), 'audio');
+    it('390px desktop window stays on iframe (does NOT treat narrow desktop window as mobile)', () => {
+      global.window.innerWidth = 390;
+      global.window.matchMedia = () => ({ matches: false });
+      setNavigator({
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+        userAgentData: { mobile: false },
+        maxTouchPoints: 0,
+        standalone: false,
+      });
+
+      assert.equal(isMobileViewport(), true, 'isMobileViewport reflects < 1024px CSS width');
+      assert.equal(isMobileDevice(), false, '390px desktop window must NOT be classified as mobile device');
+      assert.equal(resolveEffectiveEngine('Auto'), 'youtube', '390px desktop window stays on YouTube iframe');
     });
 
     it('defaults to YouTube IFrame on desktop viewport (>= 1024px) with mouse input', () => {
