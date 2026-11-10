@@ -97,9 +97,12 @@ import {
   getNativeYtClient,
   resolveNativeStreamUrl,
 } from './nativeStream.js';
+import nativeYtClient from './nativeYtClient.js';
+
 export {
   getNativeYtClient,
   resolveNativeStreamUrl,
+  nativeYtClient,
 };
 
 /**
@@ -109,6 +112,7 @@ export const apiClient = {
   // Health & Readiness Probes
   health: {
     ping: async () => {
+      if (Capacitor.isNativePlatform()) return { status: 'ok', native: true };
       try {
         const res = await axios.get(`${API_BASE}/health`, { timeout: 15000 });
         return res.data;
@@ -117,6 +121,7 @@ export const apiClient = {
       }
     },
     ready: async () => {
+      if (Capacitor.isNativePlatform()) return { ready: true, native: true };
       const res = await axios.get(`${API_BASE}/ready`, { timeout: 15000 });
       return res.data;
     },
@@ -125,34 +130,91 @@ export const apiClient = {
   // Auth Passcode API
   auth: {
     submitPasscode: async (passcode) => {
+      if (Capacitor.isNativePlatform()) return { success: true };
       const res = await api.post('/auth/passcode', { passcode });
       return res.data;
     },
     checkStatus: async () => {
+      if (Capacitor.isNativePlatform()) return { authenticated: true, bypass: true };
       const res = await api.get('/auth/status');
       return res.data;
     },
   },
 
-  // Library API
+  // Library API (Persisted to localStorage on Native Mobile when offline)
   library: {
     getOverview: async () => {
+      if (Capacitor.isNativePlatform()) {
+        const liked = JSON.parse(localStorage.getItem('super_culture_local_liked_songs') || '[]');
+        const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
+        return {
+          likedSongs: liked,
+          playlists,
+          user: { mood: 'Euphoric', mode: 'public' },
+        };
+      }
       const res = await api.get('/library/overview');
       return res.data;
     },
     toggleLike: async (videoId, trackMeta) => {
+      if (Capacitor.isNativePlatform()) {
+        const liked = JSON.parse(localStorage.getItem('super_culture_local_liked_songs') || '[]');
+        const idx = liked.findIndex((s) => (s.videoId || s.id) === videoId);
+        let isNowLiked = false;
+        if (idx >= 0) {
+          liked.splice(idx, 1);
+        } else {
+          isNowLiked = true;
+          liked.unshift({
+            videoId,
+            id: videoId,
+            ...(trackMeta?.trackMeta || trackMeta || {}),
+          });
+        }
+        localStorage.setItem('super_culture_local_liked_songs', JSON.stringify(liked));
+        return { liked: isNowLiked, likedSongsCount: liked.length };
+      }
       const res = await api.post(`/library/likes/${videoId}`, { trackMeta });
       return res.data;
     },
     createPlaylist: async (name, description = '') => {
+      if (Capacitor.isNativePlatform()) {
+        const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
+        const newPl = {
+          id: `local-pl-${Date.now()}`,
+          name: name.trim(),
+          description,
+          coverUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
+          tracks: [],
+          createdAt: new Date().toISOString(),
+        };
+        playlists.unshift(newPl);
+        localStorage.setItem('super_culture_local_playlists', JSON.stringify(playlists));
+        return { playlist: newPl };
+      }
       const res = await api.post('/library/playlists', { name, description });
       return res.data;
     },
     deletePlaylist: async (id) => {
+      if (Capacitor.isNativePlatform()) {
+        let playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
+        playlists = playlists.filter((p) => p.id !== id);
+        localStorage.setItem('super_culture_local_playlists', JSON.stringify(playlists));
+        return { success: true };
+      }
       const res = await api.delete(`/library/playlists/${id}`);
       return res.data;
     },
     removeTrackFromPlaylist: async (id, videoId) => {
+      if (Capacitor.isNativePlatform()) {
+        const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
+        const target = playlists.find((p) => p.id === id);
+        if (target && Array.isArray(target.tracks)) {
+          target.tracks = target.tracks.filter((t) => (t.videoId || t.id) !== videoId);
+          localStorage.setItem('super_culture_local_playlists', JSON.stringify(playlists));
+        }
+        return { success: true };
+      }
       const res = await api.delete(`/library/playlists/${id}/tracks/${videoId}`);
       return res.data;
     },
@@ -161,6 +223,10 @@ export const apiClient = {
   // Mood & Mode (Session) API
   vibe: {
     updateMoodOrMode: async ({ mood, mode }) => {
+      if (Capacitor.isNativePlatform()) {
+        localStorage.setItem('super_culture_local_vibe', JSON.stringify({ mood, mode }));
+        return { success: true, mood, mode };
+      }
       const res = await api.post('/vibe/mood', { mood, mode });
       return res.data;
     },
@@ -170,7 +236,7 @@ export const apiClient = {
   music: {
     getStreamUrl: async (videoId, prefer = 'aac') => {
       // 1. Mobile Native Branch (Capacitor on iOS / Android)
-      // Hits YouTube directly using the iOS client profile (bypasses browser CORS natively)
+      // Hits YouTube directly using VISIONOS / on-device client profile
       if (Capacitor.isNativePlatform()) {
         try {
           return await resolveNativeStreamUrl(videoId, prefer);
@@ -194,22 +260,37 @@ export const apiClient = {
       }
     },
     getHomeShelves: async () => {
+      if (Capacitor.isNativePlatform()) {
+        return await nativeYtClient.getHomeShelves();
+      }
       const res = await api.get('/music/home-shelves');
       return res.data;
     },
     search: async (query, limit = 40) => {
+      if (Capacitor.isNativePlatform()) {
+        return await nativeYtClient.search(query, limit);
+      }
       const res = await api.get(`/music/search?q=${encodeURIComponent(query)}&limit=${limit}`);
       return res.data;
     },
     getArtist: async (name) => {
+      if (Capacitor.isNativePlatform()) {
+        return await nativeYtClient.getArtist(name);
+      }
       const res = await api.get(`/music/artist/${encodeURIComponent(name)}`);
       return res.data;
     },
     getUpNext: async (videoId) => {
+      if (Capacitor.isNativePlatform()) {
+        return await nativeYtClient.getUpNext(videoId);
+      }
       const res = await api.get(`/music/up-next/${videoId}`);
       return res.data;
     },
     importTracklist: async (tracklist) => {
+      if (Capacitor.isNativePlatform()) {
+        return await nativeYtClient.importTracklist(tracklist);
+      }
       const res = await api.post('/music/import', { tracklist });
       return res.data;
     },
@@ -226,6 +307,16 @@ export const apiClient = {
       return res.data;
     },
     logHistory: async (song) => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const history = JSON.parse(localStorage.getItem('super_culture_ai_history') || '[]');
+          history.unshift({ song, timestamp: Date.now() });
+          localStorage.setItem('super_culture_ai_history', JSON.stringify(history.slice(0, 50)));
+        } catch {
+          // Ignore local storage write errors
+        }
+        return { success: true };
+      }
       const res = await api.post('/ai/log-history', { song });
       return res.data;
     },
