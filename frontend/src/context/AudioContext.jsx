@@ -15,6 +15,7 @@ export const AudioContext = createContext({
   volume: 0.74,
   isShuffle: false,
   isRepeat: false,
+  repeatMode: 'off',
   isEmptyPlayer: false,
   toastMessage: null,
   isLiked: true,
@@ -65,8 +66,12 @@ export const AudioProvider = ({ children }) => {
   const [duration, setDuration] = useState(defaultTrack?.seconds || 0);
   const [volume, setVolume] = useState(typeof initialState.volume === 'number' ? initialState.volume : 0.74);
   const [isShuffle, setIsShuffle] = useState(Boolean(initialState.isShuffle));
-  const [isRepeat, setIsRepeat] = useState(Boolean(initialState.isRepeat));
+  const initialRepeatMode = initialState.repeatMode || (initialState.isRepeat ? 'all' : 'off');
+  const [repeatMode, setRepeatMode] = useState(initialRepeatMode);
+  const [isRepeat, setIsRepeat] = useState(initialRepeatMode !== 'off');
   const [isEmptyPlayer, setIsEmptyPlayer] = useState(!defaultTrack);
+  const [originalQueue, setOriginalQueue] = useState(defaultQueue);
+  const originalQueueRef = useRef(defaultQueue);
 
   // App-level interactive state
   const [isLiked, setIsLiked] = useState(true);
@@ -88,8 +93,10 @@ export const AudioProvider = ({ children }) => {
     currentTrack,
     currentTrackIndex,
     queue,
+    originalQueue,
     isShuffle,
     isRepeat,
+    repeatMode,
     isPlaying,
     volume,
     currentTime,
@@ -101,14 +108,16 @@ export const AudioProvider = ({ children }) => {
       currentTrack,
       currentTrackIndex,
       queue,
+      originalQueue,
       isShuffle,
       isRepeat,
+      repeatMode,
       isPlaying,
       volume,
       currentTime,
       isEmptyPlayer,
     };
-  }, [currentTrack, currentTrackIndex, queue, isShuffle, isRepeat, isPlaying, volume, currentTime, isEmptyPlayer]);
+  }, [currentTrack, currentTrackIndex, queue, originalQueue, isShuffle, isRepeat, repeatMode, isPlaying, volume, currentTime, isEmptyPlayer]);
 
   // Sync to body paused-eq class
   useEffect(() => {
@@ -128,9 +137,10 @@ export const AudioProvider = ({ children }) => {
       currentTime,
       isShuffle,
       isRepeat,
+      repeatMode,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrack, queue, volume, isShuffle, isRepeat]); // Note: currentTime excluded from direct dependency to prevent 500ms disk thrashing
+  }, [currentTrack, queue, volume, isShuffle, isRepeat, repeatMode]); // Note: currentTime excluded from direct dependency to prevent 500ms disk thrashing
 
   // Periodic 5-second state persistence while playing + pagehide / visibilitychange listeners (for mobile background preservation)
   useEffect(() => {
@@ -143,6 +153,7 @@ export const AudioProvider = ({ children }) => {
         currentTime: cur.currentTime,
         isShuffle: cur.isShuffle,
         isRepeat: cur.isRepeat,
+        repeatMode: cur.repeatMode,
       });
     };
 
@@ -229,12 +240,27 @@ export const AudioProvider = ({ children }) => {
     let effectiveIndex;
 
     if (customQueue && Array.isArray(customQueue) && customQueue.length > 0) {
-      effectiveQueue = customQueue;
-      setQueue(customQueue);
+      setOriginalQueue(customQueue);
+      originalQueueRef.current = customQueue;
+
       const foundIdx = customQueue.findIndex(
         (t) => (track.videoId && t.videoId === track.videoId) || t.id === track.id
       );
-      effectiveIndex = foundIdx !== -1 ? foundIdx : 0;
+      const activeTrack = foundIdx !== -1 ? customQueue[foundIdx] : track;
+
+      if (stateRef.current.isShuffle && customQueue.length > 1) {
+        const others = customQueue.filter((_, idx) => idx !== foundIdx);
+        for (let i = others.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [others[i], others[j]] = [others[j], others[i]];
+        }
+        effectiveQueue = [activeTrack, ...others];
+        effectiveIndex = 0;
+      } else {
+        effectiveQueue = customQueue;
+        effectiveIndex = foundIdx !== -1 ? foundIdx : 0;
+      }
+      setQueue(effectiveQueue);
       setCurrentTrackIndex(effectiveIndex);
     } else {
       const currentQueue = stateRef.current.queue;
@@ -251,6 +277,9 @@ export const AudioProvider = ({ children }) => {
         effectiveIndex = updatedQueue.length - 1;
         setQueue(updatedQueue);
         setCurrentTrackIndex(effectiveIndex);
+        const updatedOriginal = [...(originalQueueRef.current || []), track];
+        setOriginalQueue(updatedOriginal);
+        originalQueueRef.current = updatedOriginal;
       }
     }
 
@@ -264,8 +293,16 @@ export const AudioProvider = ({ children }) => {
 
     // Immediately kick off next-track stream preload in the background
     if (Array.isArray(effectiveQueue) && effectiveQueue.length > 1) {
-      const nextIdx = (effectiveIndex + 1) % effectiveQueue.length;
-      const nextCandidate = effectiveQueue[nextIdx];
+      let nextCandidate = null;
+      const curRepeat = stateRef.current.repeatMode;
+      if (curRepeat === 'one') {
+        nextCandidate = null;
+      } else if (effectiveIndex < effectiveQueue.length - 1) {
+        nextCandidate = effectiveQueue[effectiveIndex + 1];
+      } else if (curRepeat === 'all') {
+        nextCandidate = effectiveQueue[0];
+      }
+
       if (
         nextCandidate?.videoId &&
         nextCandidate.videoId !== track.videoId &&
@@ -274,6 +311,8 @@ export const AudioProvider = ({ children }) => {
       ) {
         plannedNextRef.current = { fromVideoId: track.videoId, track: nextCandidate };
         playerRef.current.preloadNextStreamUrl(nextCandidate.videoId);
+      } else {
+        plannedNextRef.current = { fromVideoId: track.videoId, track: null };
       }
     }
 
@@ -375,24 +414,13 @@ export const AudioProvider = ({ children }) => {
     );
     if (currentIndex === -1) return;
 
-    let nextTrack;
-    const planned = plannedNextRef.current;
-    const plannedStillValid =
-      isShuffle &&
-      planned.fromVideoId === currentTrack.videoId &&
-      planned.track &&
-      planned.track.videoId !== currentTrack.videoId &&
-      queue.some((t) => t.videoId === planned.track.videoId);
-    if (plannedStillValid) {
-      nextTrack = planned.track;
-    } else if (isShuffle) {
-      let idx;
-      do {
-        idx = Math.floor(Math.random() * queue.length);
-      } while (idx === currentIndex);
-      nextTrack = queue[idx];
-    } else {
-      nextTrack = queue[(currentIndex + 1) % queue.length];
+    let nextTrack = null;
+    if (repeatMode === 'one') {
+      nextTrack = null;
+    } else if (currentIndex < queue.length - 1) {
+      nextTrack = queue[currentIndex + 1];
+    } else if (repeatMode === 'all') {
+      nextTrack = queue[0];
     }
 
     plannedNextRef.current = { fromVideoId: currentTrack.videoId, track: nextTrack };
@@ -401,7 +429,44 @@ export const AudioProvider = ({ children }) => {
     if (nextTrack?.videoId && player && typeof player.preloadNextStreamUrl === 'function') {
       player.preloadNextStreamUrl(nextTrack.videoId);
     }
-  }, [currentTrack, currentTrackIndex, queue, isShuffle, isPlaying, isPlayerReady, playerEpoch]);
+  }, [currentTrack, currentTrackIndex, queue, isShuffle, repeatMode, isPlaying, isPlayerReady, playerEpoch]);
+
+  // Handle track reaching its end naturally
+  const handleTrackEnded = useCallback(() => {
+    const { queue: currentQueue, currentTrack: activeTrack, repeatMode: curRepeat } = stateRef.current;
+    if (!currentQueue || currentQueue.length === 0) return;
+
+    // 1. Repeat ONE: loop current track immediately
+    if (curRepeat === 'one') {
+      if (playerRef.current) {
+        if (typeof playerRef.current.seekTo === 'function') {
+          playerRef.current.seekTo(0);
+        }
+        if (typeof playerRef.current.playVideo === 'function') {
+          playerRef.current.playVideo();
+        }
+      }
+      return;
+    }
+
+    const currentIndex = currentQueue.findIndex(
+      (t) => t.id === activeTrack?.id || (activeTrack?.videoId && t.videoId === activeTrack.videoId)
+    );
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+
+    // 2. Queue advance
+    if (baseIndex < currentQueue.length - 1) {
+      const nextTrack = currentQueue[baseIndex + 1];
+      playSelectedTrack(nextTrack, currentQueue);
+    } else if (curRepeat === 'all') {
+      // 3. Repeat ALL: wrap to start
+      const nextTrack = currentQueue[0];
+      playSelectedTrack(nextTrack, currentQueue);
+    } else {
+      // 4. Repeat OFF: reached end of playlist, halt
+      setIsPlaying(false);
+    }
+  }, [playSelectedTrack]);
 
   // Skip track forward or backward with direction (+1 or -1)
   const skipTrack = useCallback((direction = 1) => {
@@ -409,28 +474,19 @@ export const AudioProvider = ({ children }) => {
       setIsEmptyPlayer(false);
     }
 
-    const { queue: currentQueue, currentTrack: activeTrack, isShuffle: shuffle } = stateRef.current;
+    const { queue: currentQueue, currentTrack: activeTrack } = stateRef.current;
     if (!currentQueue || currentQueue.length === 0) return;
 
     const currentIndex = currentQueue.findIndex(
       (t) => t.id === activeTrack?.id || (activeTrack?.videoId && t.videoId === activeTrack.videoId)
     );
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0;
 
     let nextIndex;
-    const planned = plannedNextRef.current;
-    const plannedIndex =
-      direction === 1 && planned.track && planned.fromVideoId === (activeTrack?.videoId || null)
-        ? currentQueue.findIndex((t) => t.id === planned.track.id || (planned.track.videoId && t.videoId === planned.track.videoId))
-        : -1;
-    if (plannedIndex !== -1 && plannedIndex !== currentIndex) {
-      nextIndex = plannedIndex;
-    } else if (shuffle && currentQueue.length > 1) {
-      do {
-        nextIndex = Math.floor(Math.random() * currentQueue.length);
-      } while (nextIndex === currentIndex);
+    if (direction === 1) {
+      nextIndex = (baseIndex + 1) % currentQueue.length;
     } else {
-      const baseIndex = currentIndex >= 0 ? currentIndex : 0;
-      nextIndex = (baseIndex + direction + currentQueue.length) % currentQueue.length;
+      nextIndex = (baseIndex - 1 + currentQueue.length) % currentQueue.length;
     }
 
     const nextTrack = currentQueue[nextIndex];
@@ -479,16 +535,89 @@ export const AudioProvider = ({ children }) => {
 
   const toggleShuffle = useCallback(() => {
     setIsShuffle((prev) => {
-      const next = !prev;
-      showToast(next ? 'Shuffle Queue Enabled' : 'Shuffle Queue Disabled');
-      return next;
+      const willBeShuffle = !prev;
+      const curQueue = stateRef.current.queue;
+      const curTrack = stateRef.current.currentTrack;
+
+      if (willBeShuffle) {
+        // Save current queue as originalQueue
+        const savedOriginal = originalQueueRef.current?.length ? [...originalQueueRef.current] : [...curQueue];
+        setOriginalQueue(savedOriginal);
+        originalQueueRef.current = savedOriginal;
+
+        if (curQueue.length > 1 && curTrack) {
+          const curIndex = curQueue.findIndex(
+            (t) => (curTrack.videoId && t.videoId === curTrack.videoId) || t.id === curTrack.id
+          );
+          const active = curIndex !== -1 ? curQueue[curIndex] : curTrack;
+          const remaining = curQueue.filter((_, idx) => idx !== curIndex);
+
+          // Fisher-Yates shuffle
+          for (let i = remaining.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
+          }
+
+          const shuffled = [active, ...remaining];
+          setQueue(shuffled);
+          setCurrentTrackIndex(0);
+          stateRef.current = {
+            ...stateRef.current,
+            queue: shuffled,
+            currentTrackIndex: 0,
+            isShuffle: true,
+          };
+        } else {
+          stateRef.current = {
+            ...stateRef.current,
+            isShuffle: true,
+          };
+        }
+        showToast('Shuffle Queue Enabled');
+      } else {
+        // Turning Shuffle OFF: restore originalQueue
+        const restored = originalQueueRef.current?.length ? [...originalQueueRef.current] : [...curQueue];
+        setQueue(restored);
+
+        let restoredIndex = 0;
+        if (curTrack) {
+          const found = restored.findIndex(
+            (t) => (curTrack.videoId && t.videoId === curTrack.videoId) || t.id === curTrack.id
+          );
+          if (found !== -1) restoredIndex = found;
+        }
+        setCurrentTrackIndex(restoredIndex);
+        stateRef.current = {
+          ...stateRef.current,
+          queue: restored,
+          currentTrackIndex: restoredIndex,
+          isShuffle: false,
+        };
+        showToast('Shuffle Queue Disabled');
+      }
+      return willBeShuffle;
     });
   }, [showToast]);
 
   const toggleRepeat = useCallback(() => {
-    setIsRepeat((prev) => {
-      const next = !prev;
-      showToast(next ? 'Repeat Track Active' : 'Repeat Mode Off');
+    setRepeatMode((prev) => {
+      let next;
+      if (prev === 'off') {
+        next = 'all';
+        showToast('Repeat: All Tracks Active');
+      } else if (prev === 'all') {
+        next = 'one';
+        showToast('Repeat: Current Track (1) Active');
+      } else {
+        next = 'off';
+        showToast('Repeat Mode Off');
+      }
+      setIsRepeat(next !== 'off');
+      stateRef.current = {
+        ...stateRef.current,
+        repeatMode: next,
+        isRepeat: next !== 'off',
+      };
       return next;
     });
   }, [showToast]);
@@ -595,6 +724,8 @@ export const AudioProvider = ({ children }) => {
         volume,
         isShuffle,
         isRepeat,
+        repeatMode,
+        originalQueue,
         isEmptyPlayer,
         toastMessage,
         isLiked,
@@ -605,6 +736,7 @@ export const AudioProvider = ({ children }) => {
         playSelectedTrack,
         playTrack,
         skipTrack,
+        handleTrackEnded,
         togglePlay,
         skipNext,
         skipPrev,

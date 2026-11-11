@@ -22,6 +22,8 @@ const AudioEngineHost = memo(function AudioEngineHost() {
     volume,
     setIsPlaying,
     isRepeat,
+    repeatMode,
+    handleTrackEnded,
     showToast,
   } = useContext(AudioContext);
 
@@ -106,8 +108,10 @@ const AudioEngineHost = memo(function AudioEngineHost() {
   useEffect(() => {
     handlerRef.current = createPlaybackEventHandler({
       getIsRepeat: () => isRepeat,
+      getRepeatMode: () => repeatMode,
       getSkipNext: () => skipNext,
       getSkipTrack: () => skipTrack,
+      onTrackEnded: () => handleTrackEnded?.(),
       setIsPlaying,
       showToast,
       pauseVideo: () => audioPlayerRef.current?.pauseVideo(),
@@ -141,7 +145,7 @@ const AudioEngineHost = memo(function AudioEngineHost() {
         }
       },
     });
-  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast, currentTrack, setLastFallbackReason, setTemporaryEngineOverride]);
+  }, [isRepeat, repeatMode, handleTrackEnded, skipNext, skipTrack, setIsPlaying, showToast, currentTrack, setLastFallbackReason, setTemporaryEngineOverride]);
 
   // Compatibility mode is per track: once the queue moves on, try the audio stream again
   useEffect(() => {

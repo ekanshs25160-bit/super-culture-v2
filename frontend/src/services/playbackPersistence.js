@@ -12,6 +12,7 @@ const defaultState = {
   currentTime: 0,
   isShuffle: false,
   isRepeat: false,
+  repeatMode: 'off',
 };
 
 const playbackPersistence = {
@@ -24,6 +25,7 @@ const playbackPersistence = {
         currentTime: typeof state.currentTime === 'number' ? state.currentTime : (state.progress || 0),
         isShuffle: Boolean(state.isShuffle),
         isRepeat: Boolean(state.isRepeat),
+        repeatMode: state.repeatMode || (state.isRepeat ? 'all' : 'off'),
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
@@ -42,6 +44,7 @@ const playbackPersistence = {
         ...parsed,
         queue: Array.isArray(parsed.queue) ? parsed.queue : [],
         currentTime: typeof parsed.currentTime === 'number' ? parsed.currentTime : (parsed.progress || 0),
+        repeatMode: parsed.repeatMode || (parsed.isRepeat ? 'all' : 'off'),
       };
     } catch (e) {
       console.warn('[Persistence] Failed to load playback state:', e);

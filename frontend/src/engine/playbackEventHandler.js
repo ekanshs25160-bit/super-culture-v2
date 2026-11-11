@@ -28,8 +28,10 @@ export const resetConsecutiveErrors = () => {
  */
 export const createPlaybackEventHandler = ({
   getIsRepeat,
+  getRepeatMode,
   getSkipNext,
   getSkipTrack,
+  onTrackEnded,
   setIsPlaying,
   showToast,
   onEngineFallback,
@@ -169,7 +171,12 @@ export const createPlaybackEventHandler = ({
 
       if (state === PlayerState.ENDED) {
         currentTrackPlayStart = null;
-        if (getIsRepeat && getIsRepeat()) {
+        if (typeof onTrackEnded === 'function') {
+          onTrackEnded(playerInstance);
+          return;
+        }
+        const repMode = getRepeatMode ? getRepeatMode() : (getIsRepeat && getIsRepeat() ? 'one' : 'off');
+        if (repMode === 'one') {
           if (playerInstance && typeof playerInstance.seekTo === 'function') {
             playerInstance.seekTo(0);
           }

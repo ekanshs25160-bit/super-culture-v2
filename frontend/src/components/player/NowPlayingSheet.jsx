@@ -23,6 +23,7 @@ export default function NowPlayingSheet({
   isAutoplayBlocked,
   isShuffle,
   isRepeat,
+  repeatMode = 'off',
   isLiked,
   currentTime,
   duration,
@@ -328,14 +329,32 @@ export default function NowPlayingSheet({
           {/* Repeat */}
           <button
             onClick={onToggleRepeat}
-            aria-label="Toggle repeat"
-            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
-              isRepeat
+            aria-label={
+              repeatMode === 'one'
+                ? 'Repeat current track (1)'
+                : repeatMode === 'all'
+                ? 'Repeat all tracks'
+                : 'Repeat off'
+            }
+            title={
+              repeatMode === 'one'
+                ? 'Repeat: Current Track (1)'
+                : repeatMode === 'all'
+                ? 'Repeat: All Tracks'
+                : 'Repeat: Off'
+            }
+            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 relative ${
+              isRepeat || repeatMode !== 'off'
                 ? 'text-[#1ED760]'
                 : 'text-[#8A8A8E] hover:text-white'
             }`}
           >
             <Repeat className="w-5 h-5" />
+            {repeatMode === 'one' && (
+              <span className="absolute top-1 right-1 text-[9px] font-bold bg-[#1ED760] text-[#09090b] rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none">
+                1
+              </span>
+            )}
           </button>
         </div>
       </div>

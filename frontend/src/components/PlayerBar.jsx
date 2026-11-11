@@ -21,7 +21,7 @@ const formatTime = (sec) => {
 export default function PlayerBar() {
   const {
     currentTrack, queue, isPlaying, currentTime, duration, volume,
-    isShuffle, isRepeat, isEmptyPlayer, toastMessage, playTrack,
+    isShuffle, isRepeat, repeatMode, isEmptyPlayer, toastMessage, playTrack,
     togglePlay, skipNext, skipPrev, seekTo, setVolumeLevel,
     toggleShuffle, toggleRepeat, showToast, unlock,
   } = useContext(AudioContext);
@@ -170,6 +170,7 @@ export default function PlayerBar() {
             trayRef={trayRef}
             isShuffle={isShuffle}
             isRepeat={isRepeat}
+            repeatMode={repeatMode}
             volumePct={volumePct}
             onToggleShuffle={toggleShuffle}
             onToggleRepeat={toggleRepeat}
@@ -336,6 +337,7 @@ export default function PlayerBar() {
               isAutoplayBlocked={isAutoplayBlocked}
               isShuffle={isShuffle}
               isRepeat={isRepeat}
+              repeatMode={repeatMode}
               currentSeconds={currentSeconds}
               totalSeconds={totalSeconds}
               progressPct={progressPct}
@@ -372,6 +374,7 @@ export default function PlayerBar() {
         isAutoplayBlocked={isAutoplayBlocked}
         isShuffle={isShuffle}
         isRepeat={isRepeat}
+        repeatMode={repeatMode}
         isLiked={isLiked}
         currentTime={currentSeconds}
         duration={totalSeconds}

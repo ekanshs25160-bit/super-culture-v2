@@ -20,6 +20,8 @@ const YouTubePlayer = memo(function YouTubePlayer() {
     isPlaying,
     setIsPlaying,
     isRepeat,
+    repeatMode,
+    handleTrackEnded,
     showToast,
   } = useContext(AudioContext);
 
@@ -81,12 +83,14 @@ const YouTubePlayer = memo(function YouTubePlayer() {
   useEffect(() => {
     handlerRef.current = createPlaybackEventHandler({
       getIsRepeat: () => isRepeat,
+      getRepeatMode: () => repeatMode,
       getSkipNext: () => skipNext,
       getSkipTrack: () => skipTrack,
+      onTrackEnded: () => handleTrackEnded?.(),
       setIsPlaying,
       showToast,
     });
-  }, [isRepeat, skipNext, skipTrack, setIsPlaying, showToast]);
+  }, [isRepeat, repeatMode, handleTrackEnded, skipNext, skipTrack, setIsPlaying, showToast]);
 
   // Sync track changes when YouTube player is active and ready
   useEffect(() => {
