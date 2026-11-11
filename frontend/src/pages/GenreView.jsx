@@ -3,7 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useAudio } from '../hooks/useAudio';
 import { INITIAL_TRACK_QUEUE, TRENDING_TRACKS } from '../data/tracks';
 import { PageHeader, CoverImage } from '../components/shared';
-import { API_BASE } from '../services/api';
+import { apiClient } from '../services/api';
 
 export default function GenreView() {
   const { genreId } = useParams();
@@ -37,17 +37,7 @@ export default function GenreView() {
       setLoading(true);
       setCurrentPage(1);
       try {
-        const res = await fetch(
-          `${API_BASE}/api/music/search?q=${encodeURIComponent(query)}&limit=40`
-        );
-
-        // Catch non-200 responses cleanly to avoid parsing HTML as JSON
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(`API Error ${res.status}: ${errorText}`);
-        }
-
-        const json = await res.json();
+        const json = await apiClient.music.search(query, 40);
         const rawList = Array.isArray(json.tracks)
           ? json.tracks
           : Array.isArray(json.data)

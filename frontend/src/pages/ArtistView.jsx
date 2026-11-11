@@ -4,7 +4,7 @@ import { Play, ArrowLeft, UserCheck, UserPlus, Disc3, ChevronLeft, ChevronRight 
 import { TrackRow, CoverImage, EmptyState, Skeleton } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
-import { API_BASE } from '../services/api';
+import { apiClient } from '../services/api';
 
 const PAGE_SIZE = 12;
 
@@ -39,9 +39,7 @@ export default function ArtistView() {
       setLoading(true);
       setPage(1);
       try {
-        const res = await fetch(`${API_BASE}/api/music/artist/${encodeURIComponent(artistName)}`);
-        if (!res.ok) throw new Error('Failed to load artist tracks');
-        const json = await res.json();
+        const json = await apiClient.music.getArtist(artistName);
         const rawList = Array.isArray(json.tracks)
           ? json.tracks
           : Array.isArray(json.data)

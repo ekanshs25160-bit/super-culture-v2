@@ -97,13 +97,19 @@ import {
   getNativeYtClient,
   resolveNativeStreamUrl,
 } from './nativeStream.js';
-import nativeYtClient from './nativeYtClient.js';
+import nativeYtClient, { resolveAudioStream } from './nativeYtClient.js';
 
 export {
   getNativeYtClient,
   resolveNativeStreamUrl,
+  resolveAudioStream,
   nativeYtClient,
 };
+
+/**
+ * True when running on a native mobile platform without an external VITE_API_URL forced.
+ */
+export const isStandaloneNative = () => Capacitor.isNativePlatform() && !API_BASE;
 
 /**
  * Super Culture API Endpoint Handlers
@@ -112,7 +118,7 @@ export const apiClient = {
   // Health & Readiness Probes
   health: {
     ping: async () => {
-      if (Capacitor.isNativePlatform()) return { status: 'ok', native: true };
+      if (isStandaloneNative()) return { status: 'ok', native: true };
       try {
         const res = await axios.get(`${API_BASE}/health`, { timeout: 15000 });
         return res.data;
@@ -121,7 +127,7 @@ export const apiClient = {
       }
     },
     ready: async () => {
-      if (Capacitor.isNativePlatform()) return { ready: true, native: true };
+      if (isStandaloneNative()) return { ready: true, native: true };
       const res = await axios.get(`${API_BASE}/ready`, { timeout: 15000 });
       return res.data;
     },
@@ -130,12 +136,12 @@ export const apiClient = {
   // Auth Passcode API
   auth: {
     submitPasscode: async (passcode) => {
-      if (Capacitor.isNativePlatform()) return { success: true };
+      if (isStandaloneNative()) return { success: true };
       const res = await api.post('/auth/passcode', { passcode });
       return res.data;
     },
     checkStatus: async () => {
-      if (Capacitor.isNativePlatform()) return { authenticated: true, bypass: true };
+      if (isStandaloneNative()) return { authenticated: true, bypass: true };
       const res = await api.get('/auth/status');
       return res.data;
     },
@@ -144,7 +150,7 @@ export const apiClient = {
   // Library API (Persisted to localStorage on Native Mobile when offline)
   library: {
     getOverview: async () => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         const liked = JSON.parse(localStorage.getItem('super_culture_local_liked_songs') || '[]');
         const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
         return {
@@ -157,7 +163,7 @@ export const apiClient = {
       return res.data;
     },
     toggleLike: async (videoId, trackMeta) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         const liked = JSON.parse(localStorage.getItem('super_culture_local_liked_songs') || '[]');
         const idx = liked.findIndex((s) => (s.videoId || s.id) === videoId);
         let isNowLiked = false;
@@ -178,7 +184,7 @@ export const apiClient = {
       return res.data;
     },
     createPlaylist: async (name, description = '') => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
         const newPl = {
           id: `local-pl-${Date.now()}`,
@@ -196,7 +202,7 @@ export const apiClient = {
       return res.data;
     },
     deletePlaylist: async (id) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         let playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
         playlists = playlists.filter((p) => p.id !== id);
         localStorage.setItem('super_culture_local_playlists', JSON.stringify(playlists));
@@ -206,7 +212,7 @@ export const apiClient = {
       return res.data;
     },
     removeTrackFromPlaylist: async (id, videoId) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
         const target = playlists.find((p) => p.id === id);
         if (target && Array.isArray(target.tracks)) {
@@ -223,7 +229,7 @@ export const apiClient = {
   // Mood & Mode (Session) API
   vibe: {
     updateMoodOrMode: async ({ mood, mode }) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         localStorage.setItem('super_culture_local_vibe', JSON.stringify({ mood, mode }));
         return { success: true, mood, mode };
       }
@@ -235,9 +241,8 @@ export const apiClient = {
   // Music Streaming API
   music: {
     getStreamUrl: async (videoId, prefer = 'aac') => {
-      // 1. Mobile Native Branch (Capacitor on iOS / Android)
-      // Hits YouTube directly using VISIONOS / on-device client profile
-      if (Capacitor.isNativePlatform()) {
+      // 1. Mobile Native Branch (Capacitor on iOS / Android when standalone)
+      if (isStandaloneNative()) {
         try {
           return await resolveNativeStreamUrl(videoId, prefer);
         } catch (nativeErr) {
@@ -260,35 +265,35 @@ export const apiClient = {
       }
     },
     getHomeShelves: async () => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         return await nativeYtClient.getHomeShelves();
       }
       const res = await api.get('/music/home-shelves');
       return res.data;
     },
     search: async (query, limit = 40) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         return await nativeYtClient.search(query, limit);
       }
       const res = await api.get(`/music/search?q=${encodeURIComponent(query)}&limit=${limit}`);
       return res.data;
     },
     getArtist: async (name) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         return await nativeYtClient.getArtist(name);
       }
       const res = await api.get(`/music/artist/${encodeURIComponent(name)}`);
       return res.data;
     },
     getUpNext: async (videoId) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         return await nativeYtClient.getUpNext(videoId);
       }
       const res = await api.get(`/music/up-next/${videoId}`);
       return res.data;
     },
     importTracklist: async (tracklist) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         return await nativeYtClient.importTracklist(tracklist);
       }
       const res = await api.post('/music/import', { tracklist });
@@ -307,7 +312,7 @@ export const apiClient = {
       return res.data;
     },
     logHistory: async (song) => {
-      if (Capacitor.isNativePlatform()) {
+      if (isStandaloneNative()) {
         try {
           const history = JSON.parse(localStorage.getItem('super_culture_ai_history') || '[]');
           history.unshift({ song, timestamp: Date.now() });

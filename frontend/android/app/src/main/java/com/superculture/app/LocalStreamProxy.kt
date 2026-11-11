@@ -38,8 +38,10 @@ object LocalStreamProxy {
     private val totalLengthPattern = Pattern.compile("/(\\d+)\\s*$")
 
     @JvmStatic
-    fun start(context: Context) {
-        if (isRunning) return
+    @JvmOverloads
+    @Synchronized
+    fun start(context: Context? = null): Int {
+        if (isRunning && port > 0) return port
         try {
             // Bind to loopback interface on an ephemeral port
             val socket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
@@ -63,6 +65,7 @@ object LocalStreamProxy {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start LocalStreamProxy: ${e.message}", e)
         }
+        return port
     }
 
     @JvmStatic

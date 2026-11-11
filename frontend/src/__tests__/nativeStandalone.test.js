@@ -192,4 +192,58 @@ describe('Standalone Native Mobile Suite (Backend Turned OFF)', () => {
       Capacitor.isNativePlatform = origIsNative;
     }
   });
+
+  it('6. resolveAudioStream flags throttled: true when 1.5 MiB deep probe returns 403', async () => {
+    const origIsNative = Capacitor.isNativePlatform;
+    const origPlatform = Capacitor.getPlatform;
+    Capacitor.isNativePlatform = () => true;
+    Capacitor.getPlatform = () => 'android';
+    setNativeProxyPortForTesting(8888);
+    setMockWatchPageForTesting({ visitorData: 'mock-vd', sts: 20760 });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/youtubei/v1/player')) {
+        const payload = {
+          playabilityStatus: { status: 'OK' },
+          streamingData: {
+            adaptiveFormats: [
+              {
+                itag: 140,
+                mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+                bitrate: 128000,
+                url: 'https://googlevideo.com/videoplayback?id=throttled-m4a',
+              },
+            ],
+          },
+        };
+        return {
+          status: 200,
+          json: async () => payload,
+          text: async () => JSON.stringify(payload),
+          headers: new Headers({ 'content-type': 'application/json' }),
+        };
+      }
+      if (urlStr.includes('googlevideo.com')) {
+        return {
+          status: 403,
+          json: async () => ({}),
+          text: async () => 'Forbidden',
+          headers: new Headers(),
+        };
+      }
+      return { status: 404, text: async () => '' };
+    };
+
+    try {
+      const res = await nativeYtClient.resolveAudioStream('throttled-vid');
+      assert.ok(res.url.startsWith('http://127.0.0.1:8888/stream?url='));
+      assert.equal(res.throttled, true);
+    } finally {
+      Capacitor.isNativePlatform = origIsNative;
+      Capacitor.getPlatform = origPlatform;
+      globalThis.fetch = origFetch;
+    }
+  });
 });
