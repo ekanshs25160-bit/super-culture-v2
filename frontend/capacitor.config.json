@@ -1,0 +1,14 @@
+{
+  "appId": "com.superculture.app",
+  "appName": "Super Culture",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "http"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

@@ -316,7 +316,14 @@ export class AudioElementPlayer {
 
     if (!this.audio) return;
     this.audio.src = targetSrc;
-    this.audio.currentTime = startSeconds || 0;
+    if (typeof this.audio.load === 'function') {
+      this.audio.load();
+    }
+    try {
+      this.audio.currentTime = startSeconds || 0;
+    } catch {
+      // Ignore if metadata is not yet loaded on native WebView
+    }
     if (token !== this.loadToken) return;
     try {
       await this.audio.play();
@@ -367,19 +374,41 @@ export class AudioElementPlayer {
       this.currentBlobUrl = null;
     }
 
-    // Synchronous fast-path: next-track URL was pre-resolved, so no network await may precede src/play().
+    // Synchronous fast-path: next-track URL was pre-resolved, so ZERO await statements precede src/load()/play().
     const pre = this._preloadedNext;
-    if (
+    const cachedEntry = this.urlCache.get(videoId);
+    const fastPreload =
       pre.videoId === videoId &&
       pre.url &&
       !pre.throttled &&
       Date.now() - (pre.timestamp || 0) < PRELOAD_MAX_AGE_MS
-    ) {
-      this._preloadedNext = { videoId: null, url: null };
-      if (pre.isBlob) {
-        this.currentBlobUrl = pre.url;
+        ? pre
+        : cachedEntry &&
+            cachedEntry.url &&
+            !cachedEntry.throttled &&
+            Date.now() - (cachedEntry.timestamp || 0) < PRELOAD_MAX_AGE_MS
+          ? {
+              videoId,
+              url: cachedEntry.url,
+              isBlob: false,
+              throttled: false,
+              timestamp: cachedEntry.timestamp,
+            }
+          : null;
+
+    if (fastPreload) {
+      if (pre.videoId === videoId) {
+        this._preloadedNext = { videoId: null, url: null };
       }
-      const fastTask = this._applySrcAndPlay({ token, targetSrc: pre.url, startSeconds, videoId })
+      if (fastPreload.isBlob) {
+        this.currentBlobUrl = fastPreload.url;
+      }
+      const fastTask = this._applySrcAndPlay({
+        token,
+        targetSrc: fastPreload.url,
+        startSeconds,
+        videoId,
+      })
         .catch((err) => {
           if (token !== this.loadToken) return;
           console.error('[AudioElementPlayer] Failed to start preloaded stream:', err);

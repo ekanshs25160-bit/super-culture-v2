@@ -5,7 +5,7 @@ import { AudioContext } from '../context/AudioContext';
 import { PageHeader, TrackRow, EmptyState, Skeleton } from '../components/shared';
 import ArtistCard from '../components/search/ArtistCard';
 import { TRENDING_TRACKS } from '../data/tracks';
-import { API_BASE } from '../services/api';
+import { apiClient } from '../services/api';
 
 const RECENT_KEY = 'super_culture_recent_searches';
 const DEFAULT_RECENTS = ['Frank Ocean', 'Burial', 'Fred again..', 'Aphex Twin', 'Synthwave'];
@@ -52,9 +52,7 @@ export default function SearchView() {
       setPage(1);
 
       try {
-        const res = await fetch(`${API_BASE}/api/music/search?q=${encodeURIComponent(query)}&limit=40`);
-        if (!res.ok) throw new Error('Search failed');
-        const json = await res.json();
+        const json = await apiClient.music.search(query, 40);
 
         const rawTracks = Array.isArray(json.tracks) ? json.tracks
           : Array.isArray(json.data) ? json.data
