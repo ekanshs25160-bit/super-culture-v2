@@ -1,6 +1,6 @@
 # Super Culture v2
 
-> A personal, glassmorphic music streaming platform powered by YouTube's audio engine and AI curation.
+> A personal, glassmorphic music streaming platform powered by YouTube's audio engine and AI curation — available as a responsive Web/PWA application and a 100% standalone native Android app.
 
 ---
 
@@ -10,73 +10,76 @@
 - **Color-Extracted Audio Auras**: Dynamic, aesthetic aura visualizations generated from your listening history, genre distributions, and liked music.
 - **OLED Glassmorphic UI**: Ultra-clean dark aesthetic with fluid animations, interactive gestures, and responsive spatial navigation.
 - **Mobile-First Experience & PWA**: Mobile mini-player expanding to a full-screen swipeable Now Playing sheet, $\ge 44\text{px}$ touch targets, safe-area inset preservation, and installable as a standalone Progressive Web App.
-- **Background Playback & Lock-Screen Controls**: Integrated with the Web Media Session API for album art, play/pause, seek, and track skip actions from mobile lock screens.
-- **Dual Playback Engine with Auto-Fallback**: Seamless switching between HTML5 `<audio>` and headless YouTube player for maximum device compatibility.
-- **Single-Port Architecture**: Express serves the compiled React single-page app, REST API endpoints, and WebSocket sync from a single port (`5001`).
-- **Synchronized Live Jam Rooms**: Real-time collaborative listening sessions synchronized across participants via low-latency WebSockets.
-- **Multi-Tier Edge Caching & SWR**: Stale-While-Revalidate caching across home shelves, discographies, and up-next queues with in-flight request de-duplication.
-- **Local-First Security & Threshold Limits**: Strict CORS allowlists, optional signed HTTP-only cookie passcode gate, rate limiting, and daily AI cost caps.
+- **Standalone Native Android App**: Runs 100% independently on Android devices via Capacitor with the laptop backend turned completely **OFF** (on-device `VISIONOS` stream resolver, local Kotlin chunk proxy, and offline library persistence).
+- **Native Android Foreground Service & Lock-Screen MediaSession**: Background playback powered by `MediaPlaybackService.kt` with a `Notification.MediaStyle` notification, `PARTIAL_WAKE_LOCK`, `WifiLock`, interactive Previous / Play / Pause / Next / Seek controls, and asynchronous album art fetching.
+- **Synchronous Zero-Await Next-Track Transitions**: Background pre-resolution (`preloadNextStreamUrl`) eliminates network `await` latency on `ended` events, ensuring uninterrupted auto-advance with the screen locked.
+- **Dual Playback Engine with Intelligent Fallback**: High-performance HTML5 `<audio>` engine paired with an automatic headless YouTube IFrame compatibility fallback for upstream throttled streams.
+- **Single-Port Architecture**: Express serves the compiled React single-page app, REST endpoints, and stream proxy from a single port (`5001`).
+- **Multi-Tier Caching & SWR**: Stale-While-Revalidate caching across home shelves, discographies, and up-next queues, plus 30-minute negative caching for throttled streams.
+- **Hardened Security & Resource Quotas**: Strict CORS allowlists with LAN/Tailscale origin matching (`ALLOW_PRIVATE_NETWORK_ORIGINS`), signed HMAC 5-minute stream tokens, optional cookie-backed passcode gate, rate limiting, and daily AI cost caps.
 
 ---
 
-## 🎵 Playback Modes & Known Limitations
+## 🏗️ Architecture & Playback Engines
 
-Super Culture employs an intelligent dual-engine audio pipeline designed to maximize playback reliability across web and mobile platforms:
+Super Culture adapts dynamically to its runtime environment to deliver reliable, high-fidelity playback across mobile, web, and native devices:
 
-- **Native `<audio>` Engine (Standard)**:
-  - Streams audio via the high-performance HTML5 `<audio>` element with backend byte-range proxying.
-  - Supports full background playback, screen-off listening, mobile lock-screen Media Session controls (album art, play/pause, seek, track skip), and fast byte-range seeking.
-- **YouTube IFrame Compatibility Mode**:
-  - Automatically activates when upstream audio streams are restricted by YouTube's 1 MiB Proof-of-Origin (PO) token cap (or on unexpected network drops).
-  - The backend classifies throttled streams during resolution and routes them directly to the headless YouTube IFrame player starting at `0:00`, preventing mid-song cutoffs.
-  - **Known Limitation**: Due to browser restrictions on background iframe execution, **lock-screen and background playback are unavailable** while compatibility mode is active (the device screen must stay awake).
+```mermaid
+flowchart TD
+    User([User selects track]) --> PlatformCheck{Platform?}
+
+    PlatformCheck -->|Standalone Android APK| NativeApp[Native Android App]
+    NativeApp --> NativeClient[nativeYtClient.js\nDirect CapacitorHttp]
+    NativeClient --> VisionOS[VISIONOS Client Player Request]
+    VisionOS --> LocalProxy[Local Kotlin HTTP Chunk Proxy\n127.0.0.1 on device]
+    LocalProxy --> ForegroundSvc[MediaPlaybackService\nForeground WakeLock + MediaSession]
+    ForegroundSvc --> NativeAudio[HTML5 audio via loopback]
+
+    PlatformCheck -->|Desktop Web / Mobile PWA| WebApp[Web Frontend]
+    WebApp --> BackendAPI[Backend Express /api/music/stream-url]
+    BackendAPI --> ProbeCheck{Upstream throttled?\n> 1.1 MB tail + 1.5 MB probe}
+    ProbeCheck -->|No - Healthy Stream| ChunkedProxy[chunkedProxy.ts\nBounded 1 MiB chunk streaming]
+    ChunkedProxy --> WebAudio[HTML5 audio with MediaSession]
+    ProbeCheck -->|Yes - Throttled Stream| CompatFallback[YouTube IFrame Player\nFallback at 0:00 with notice]
+```
+
+### 1. Standalone Native Android App
+When running inside the Capacitor Android container (`Capacitor.isNativePlatform()` is `true` and no external `VITE_API_URL` is set):
+- **On-Device Stream Resolution (`nativeYtClient.js`)**: Fetches watch-page `visitorData` and issues direct calls to YouTube's `/youtubei/v1/player` using the unthrottled `VISIONOS` client via native `CapacitorHttp`, completely bypassing CORS.
+- **Local Loopback Chunk Proxy (`LocalStreamProxy.kt`)**: Mobile WebViews reject custom `User-Agent` headers and issue open-ended `Range: bytes=0-` requests that YouTube CDN drops with `403 Forbidden`. The Android app starts a lightweight local loopback server on `127.0.0.1`, probes the stream length, and streams bounded 1 MiB chunks with the matching `VISIONOS` user agent.
+- **Foreground Service & OS MediaSession (`MediaPlaybackService.kt`)**: Acquires `PowerManager.PARTIAL_WAKE_LOCK` and `WifiLock` to prevent the OS from suspending the CPU/WebView when the screen locks. Manages an Android `MediaSession` and system notification with lock-screen scrubbing (`ACTION_SEEK_TO`) and compact media controls.
+- **Synchronous Auto-Advance**: Preloads the next track's stream URL into memory (`preloadNextStreamUrl`) so that when the current track finishes, `audio.src = url; audio.load(); audio.play()` executes synchronously with **zero async network hops** before playback starts.
+- **Offline Persistence**: Liked songs, custom playlists, and vibe preferences persist locally in browser storage, functioning without an external backend.
+
+### 2. Web `<audio>` Engine (Standard Web & PWA)
+- Streams audio through the HTML5 `<audio>` element via the Node.js backend chunk proxy (`/api/yt/stream/:videoId?t=<signed_hmac>`).
+- Features HMAC token expiration (5 minutes), byte-range seeking (HTTP 206 Partial Content), lock-screen Media Session controls, and zero-await next-track preloading.
+
+### 3. YouTube IFrame Compatibility Fallback
+- Upstream YouTube streams subject to Proof-of-Origin (PO) token throttling are detected during resolution via tail and 1.5 MiB secondary byte probes.
+- Throttled tracks are routed immediately at `0:00` to the headless YouTube IFrame player with an in-app compatibility notice, eliminating mid-song cutoffs.
+- *Note*: While in IFrame compatibility mode on web browsers, lock-screen/background playback is unavailable due to browser restrictions on background iframe execution.
 
 ---
 
 ## 📋 Prerequisites
 
-- **Node.js**: `v18.0.0` or higher (Node 20+ recommended) and `npm`
-- *or* **Docker**: Docker Engine 20+ and Docker Compose (optional)
+- **Node.js**: `v20.0.0` or higher recommended (minimum `v18.0.0`) and `npm`
+- **Android Development (Optional, for Android APK)**:
+  - **JDK 21**: Java Development Kit 21
+  - **Android SDK**: API level 34+ (`targetSdkVersion 36`, `minSdkVersion 24`)
+  - **Android Studio** or command-line tools (`sdkmanager`, Gradle)
+- **Docker (Optional)**: Docker Engine 20+ and Docker Compose
 
 ---
 
-## 🐳 Quickstart (Docker)
+## 💻 Quickstart (Web Development)
 
-The fastest way to spin up the entire application using the single-port production container:
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/<your-username>/super-culture-v2.git
-cd super-culture-v2
-
-# 2. Configure environment variables
-cp .env.example .env
-# Edit .env and insert your GEMINI_API_KEY (optional, for AI features)
-
-# 3. Build the container
-docker build -t super-culture-v2 .
-
-# 4. Run the container
-docker run -d \
-  --name super-culture \
-  -p 5001:5001 \
-  -v $(pwd)/backend/data:/app/backend/data \
-  --env-file .env \
-  super-culture-v2
-
-# 5. Open your browser
-# Navigate to http://localhost:5001
-```
-
----
-
-## 💻 Quickstart (Local Development)
-
-### Concurrent Mode (HMR Development)
+### Concurrent Mode (Hot Module Replacement)
 
 ```bash
-# 1. Clone & enter repository
-git clone https://github.com/<your-username>/super-culture-v2.git
+# 1. Clone repository
+git clone https://github.com/ekanshs25160-bit/super-culture-v2.git
 cd super-culture-v2
 
 # 2. Configure environment
@@ -86,106 +89,152 @@ cp .env.example .env
 cd backend && npm install
 cd ../frontend && npm install
 
-# 4. Run services
-# Terminal 1: Backend API & WebSocket Server (port 5001)
+# 4. Start backend (Terminal 1 - port 5001)
 cd backend && npm run dev
 
-# Terminal 2: Frontend Vite Dev Server with HMR (port 3000)
+# 5. Start frontend (Terminal 2 - port 3000)
 cd frontend && npm run dev
 ```
 
-Visit `http://localhost:3000` for development with Hot Module Replacement.
+Visit `http://localhost:3000` to start using the app with live HMR.
 
 ### Single-Port Production Mode (Local)
 
-To run the unified server locally without Docker:
+Run the unified Node.js server serving both backend API and built frontend static assets:
 
 ```bash
-# 1. Build frontend assets
+# 1. Build frontend
 cd frontend && npm run build
 
-# 2. Build and start backend server
+# 2. Build and start backend
 cd ../backend && npm run build
 npm start
 ```
 
-Visit `http://localhost:5001` to access both frontend and backend through a single port.
+Visit `http://localhost:5001`.
 
 ---
 
-## 📱 Mobile Access & PWA Installation
+## 📱 Building the Standalone Android APK
 
-You can run Super Culture v2 directly on your phone as a full-screen, standalone application:
+The standalone Android APK runs independently with full lock-screen background playback, MediaSession notifications, and local stream proxying:
 
-1. **Find your computer's Local IP address**:
-   - **macOS**: Run `ipconfig getifaddr en0` (Wi-Fi)
-   - **Linux**: Run `hostname -I | awk '{print $1}'`
-   - **Windows**: Run `ipconfig` and look for `IPv4 Address`
-   *(Example: `192.168.1.45`)*
+```bash
+# 1. Build frontend distribution bundle (without forcing external API URL)
+cd frontend
+env -u VITE_API_URL npm run build
 
-2. **Connect to the same Wi-Fi**:
-   Ensure your phone is connected to the same local Wi-Fi network as the host computer.
+# 2. Sync web assets and plugins to Android project
+npx cap sync android
 
-3. **Open the browser on your phone**:
-   Navigate to:
-   ```text
-   http://<YOUR_LOCAL_IP>:5001
-   ```
-   *(e.g., `http://192.168.1.45:5001`)*
+# 3. Compile Debug APK with Gradle
+cd android
+./gradlew assembleDebug
+```
 
-4. **Install as a PWA**:
-   - **iOS (Safari)**: Tap the **Share** button $\rightarrow$ Select **"Add to Home Screen"**.
-   - **Android (Chrome)**: Tap the menu $\rightarrow$ Select **"Add to Home screen"** or **"Install app"**.
+The resulting APK will be generated at:
+```text
+frontend/android/app/build/outputs/apk/debug/app-debug.apk
+```
 
-Once launched from your home screen, the app runs standalone without browser chrome, supports swipe gestures, keeps playback alive across tabs, and enables lock-screen playback controls.
+To install directly to a connected Android phone or emulator with USB debugging enabled:
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
 ---
 
-## 🚀 Render Deployment Guide & Cold-Start Behavior
+## 🐳 Quickstart (Docker)
 
-The Super Culture backend is optimized for zero-cost deployment on platforms like Render:
+Spin up the entire application using the single-port production Docker container:
 
-### 1. Free-Tier Cold-Start Behavior
-- **Container Sleep Cycle**: On Render's Free tier, the web service automatically spins down ("sleeps") after **15 minutes** of HTTP inactivity.
-- **Cold Start Duration**: When a sleeping service receives an incoming request, Render spins up a fresh container. This wake-up process typically takes **30–60 seconds**.
-- **Client-Side Mitigations**:
-  - **Non-blocking Wake Ping**: On frontend app load, a non-blocking `GET /health` request is immediately dispatched in the background to initiate the container wake-up process before the user interacts with audio playback.
-  - **Visual Skeleton State**: If the first data request takes longer than **3 seconds**, the UI automatically displays an ambient notification badge inside skeleton loaders: `Waking up the server...`.
-  - **In-Memory Cache Preservation**: On spin-up, the backend immediately pre-warms the home shelves cache and maintains background refresh intervals every 15 minutes.
+```bash
+# 1. Build container image
+docker build -t super-culture-v2 .
 
-### 2. Recommended Region
-- **Primary Recommendation**: **`Oregon (US West)`** (`us-west-1`)
-  - Upstream YouTube Music and Google GenAI APIs exhibit the lowest transit latency and fewest IP blocks from US West cloud data centers.
-- **Alternative (European Users)**: **`Frankfurt (EU Central)`** (`eu-central-1`) if your primary audience is based in EMEA.
+# 2. Run container
+docker run -d \
+  --name super-culture \
+  -p 5001:5001 \
+  -v $(pwd)/backend/data:/app/backend/data \
+  --env-file .env \
+  super-culture-v2
+```
 
-### 3. Health & Readiness Probes
-- **Liveness Probe**: `GET /health` — Fast, lightweight probe returning HTTP 200 `{ status: "ok" }` without database or external network queries.
-- **Readiness Probe**: `GET /ready` — Validates SQLite database connectivity (`SELECT 1`).
+Navigate to `http://localhost:5001`.
+
+---
+
+## 🧪 Testing & Verification
+
+Super Culture features automated end-to-end and unit test suites across backend, frontend, and native bridge components:
+
+```bash
+# Run Backend Test Suite (37 tests: CORS, rate-limits, signed tokens, throttling probes, caching)
+npm test --prefix backend
+
+# Build Backend TypeScript
+npm run build --prefix backend
+
+# Run Frontend Test Suite (62 tests: preloading, native resolver, fallback, store, transitions)
+npm test --prefix frontend
+
+# Lint Frontend Codebase
+npm run lint --prefix frontend
+
+# Build Frontend Production Assets
+npm run build --prefix frontend
+
+# Verify Android Native Build
+cd frontend/android && ./gradlew assembleDebug
+```
 
 ---
 
 ## ⚙️ Environment Variables
 
+Configure application settings in `.env` (refer to [`.env.example`](file:///Users/ekanshshrotriya/Documents/super-culture-v2/.env.example)):
+
 | Variable | Required | Default | Description |
-|---|---|---|---|
-| `PORT` | Optional | `5001` | HTTP & WebSocket server port |
+|:---|:---:|:---:|:---|
+| `PORT` | Optional | `5001` | HTTP server port for Express backend |
 | `NODE_ENV` | Optional | `development` | Set to `production` for containerized runs to enforce secure cookies |
-| `CORS_ORIGIN` | Optional | `https://super-culture-v2.onrender.com` | Comma-separated list of allowed frontend origins (e.g., `https://super-culture-v2.onrender.com,http://localhost:3000`) |
-| `ALLOW_PRIVATE_NETWORK_ORIGINS` | Optional | `false` | When `true` (always on in development), CORS also accepts private-network origins: `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, Tailscale `100.64-127.x.x`, `*.local` and `*.ts.net` — e.g. testing from a phone on the same Wi-Fi |
-| `APP_PASSCODE` | Optional | `""` | Shared secret passcode gating all `/api` routes with signed cookies |
-| `COOKIE_SECRET` | Optional | Auto-derived | Secret key used to sign session cookies |
-| `STREAM_SECRET` | Optional | Auto-derived | HMAC secret for signing 5-minute temporary audio streaming tokens |
-| `MAX_AI_CALLS_PER_DAY` | Optional | `100` | Global daily quota counter for Gemini AI calls to prevent unexpected costs |
-| `GEMINI_API_KEY` | Optional | `""` | Google Gemini GenAI API key for Magic Vibe and AI DJ curation |
-| `DB_PATH` | Optional | `data/super_culture.db` | Persistent SQLite database file path |
+| `CORS_ORIGIN` | Optional | `https://super-culture-v2.onrender.com,http://localhost:3000` | Comma-separated allowlist of web origins |
+| `ALLOW_PRIVATE_NETWORK_ORIGINS` | Optional | `false` | When `true` (always enabled in development), allows CORS from private IPv4 (`10.*`, `192.168.*`, `172.16-31.*`), Tailscale (`100.64-127.*`, `*.ts.net`), and mDNS (`*.local`) for phone testing over LAN |
+| `APP_PASSCODE` | Optional | `""` | Shared passcode gating all `/api` routes with signed HTTP-only cookies |
+| `COOKIE_SECRET` | Optional | Auto-derived | Secret key used to sign authentication cookies |
+| `STREAM_SECRET` | Optional | Auto-derived | HMAC secret for signing 5-minute audio streaming tokens |
+| `MAX_AI_CALLS_PER_DAY` | Optional | `100` | Global daily quota cap for Gemini AI calls to prevent overruns |
+| `GEMINI_API_KEY` | Optional | `""` | Google Gemini API key for Magic Vibe generation and AI DJ curation |
+| `DB_PATH` | Optional | `data/super_culture.db` | SQLite database file location |
+
+---
+
+## 🚀 Render / Cloud Deployment Guide
+
+The backend is optimized for zero-cost deployment on platforms like Render:
+
+### 1. Free-Tier Cold-Start Handling
+- **Sleep Cycle**: Free tier instances spin down after 15 minutes of inactivity. Fresh container spin-up takes ~30–60 seconds.
+- **Client Wake Ping**: The web app dispatches a background `GET /health` call on load to initiate container wake-up before audio interaction.
+- **Skeleton State Notification**: If an initial data fetch takes $>3\text{s}$, an ambient notification indicates the server is waking up.
+- **Cache Pre-warming**: On boot, the backend immediately warms the home shelves cache to minimize first-request latency.
+
+### 2. Recommended Hosting Region
+- **Primary**: **`Oregon (US West)`** (`us-west-1`) — Upstream YouTube Music and Gemini APIs exhibit lowest transit latency and fewest IP blocks from US West data centers.
+- **Alternative**: **`Frankfurt (EU Central)`** (`eu-central-1`) for European audiences.
+
+### 3. Health & Readiness Probes
+- **Liveness Probe**: `GET /health` — Lightweight HTTP 200 `{ status: "ok" }` without database or external network overhead.
+- **Readiness Probe**: `GET /ready` — Validates active SQLite database connectivity.
 
 ---
 
 ## ⚠️ Disclaimer
 
-Super Culture v2 is an experimental, personal open-source software project designed strictly for personal use, education, and portfolio showcase purposes.
+Super Culture v2 is an experimental, personal open-source software project built strictly for personal use, education, and portfolio showcase purposes.
 
-- Audio resolution and metadata discovery utilize the `youtubei.js` open-source library.
+- Audio resolution and metadata discovery utilize the open-source `youtubei.js` library.
 - Audio streaming is subject to YouTube's Terms of Service.
 - No copyrighted media files are hosted or permanently stored on this server; the application proxies publicly accessible streams for personal listening.
 - All trademarks, logos, and artist brand assets belong to their respective copyright holders.
