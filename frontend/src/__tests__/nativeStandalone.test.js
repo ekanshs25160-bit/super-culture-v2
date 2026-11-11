@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Capacitor } from '@capacitor/core';
 import { apiClient } from '../services/api.js';
+import { AudioElementPlayer } from '../engine/AudioElementPlayer.js';
 import nativeYtClient, {
   setNativeProxyPortForTesting,
   setMockPlayerResponseForTesting,
@@ -244,6 +245,59 @@ describe('Standalone Native Mobile Suite (Backend Turned OFF)', () => {
       Capacitor.isNativePlatform = origIsNative;
       Capacitor.getPlatform = origPlatform;
       globalThis.fetch = origFetch;
+    }
+  });
+
+  it('7. preloadNextStreamUrl on native Android resolves loopback URL and loadVideoById assigns src + plays in the same synchronous tick', async () => {
+    const origIsNative = Capacitor.isNativePlatform;
+    const origPlatform = Capacitor.getPlatform;
+    Capacitor.isNativePlatform = () => true;
+    Capacitor.getPlatform = () => 'android';
+    setNativeProxyPortForTesting(8888);
+    setMockPlayerResponseForTesting((videoId) => ({
+      url: `http://127.0.0.1:8888/stream?url=https%3A%2F%2Fgooglevideo.com%2F${videoId}`,
+      videoId,
+      throttled: false,
+      isNative: true,
+    }));
+
+    const origDoc = globalThis.document;
+    globalThis.document = {
+      createElement: () => ({
+        src: '',
+        currentTime: 0,
+        style: {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        load: () => {},
+        pause: () => {},
+        play: () => Promise.resolve(),
+      }),
+      body: { appendChild: () => {}, removeChild: () => {} },
+    };
+
+    const player = new AudioElementPlayer();
+    let playCalledSynchronously = false;
+    player.audio.play = () => {
+      playCalledSynchronously = true;
+      return Promise.resolve();
+    };
+
+    try {
+      await player.preloadNextStreamUrl('track-2-native');
+      // Call loadVideoById WITHOUT awaiting first to verify synchronous execution in the exact same tick
+      const loadTask = player.loadVideoById({ videoId: 'track-2-native', startSeconds: 0 });
+      assert.equal(
+        player.audio.src,
+        'http://127.0.0.1:8888/stream?url=https%3A%2F%2Fgooglevideo.com%2Ftrack-2-native'
+      );
+      assert.equal(playCalledSynchronously, true, 'audio.play() must be called in the same synchronous tick');
+      await loadTask;
+    } finally {
+      player.destroy();
+      globalThis.document = origDoc;
+      Capacitor.isNativePlatform = origIsNative;
+      Capacitor.getPlatform = origPlatform;
     }
   });
 });

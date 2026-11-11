@@ -225,24 +225,55 @@ export const AudioProvider = ({ children }) => {
       setIsEmptyPlayer(false);
     }
 
+    let effectiveQueue;
+    let effectiveIndex;
+
     if (customQueue && Array.isArray(customQueue) && customQueue.length > 0) {
+      effectiveQueue = customQueue;
       setQueue(customQueue);
       const foundIdx = customQueue.findIndex(
         (t) => (track.videoId && t.videoId === track.videoId) || t.id === track.id
       );
-      const targetIndex = foundIdx !== -1 ? foundIdx : 0;
-      setCurrentTrackIndex(targetIndex);
+      effectiveIndex = foundIdx !== -1 ? foundIdx : 0;
+      setCurrentTrackIndex(effectiveIndex);
     } else {
       const currentQueue = stateRef.current.queue;
       const existsIndex = currentQueue.findIndex(
         (t) => (track.videoId && t.videoId === track.videoId) || t.id === track.id
       );
       if (existsIndex !== -1) {
+        effectiveQueue = currentQueue;
+        effectiveIndex = existsIndex;
         setCurrentTrackIndex(existsIndex);
       } else {
         const updatedQueue = [...currentQueue, track];
+        effectiveQueue = updatedQueue;
+        effectiveIndex = updatedQueue.length - 1;
         setQueue(updatedQueue);
-        setCurrentTrackIndex(updatedQueue.length - 1);
+        setCurrentTrackIndex(effectiveIndex);
+      }
+    }
+
+    // Update stateRef synchronously so locked-screen transitions never read stale React state
+    stateRef.current = {
+      ...stateRef.current,
+      currentTrack: track,
+      queue: effectiveQueue,
+      isPlaying: true,
+    };
+
+    // Immediately kick off next-track stream preload in the background
+    if (Array.isArray(effectiveQueue) && effectiveQueue.length > 1) {
+      const nextIdx = (effectiveIndex + 1) % effectiveQueue.length;
+      const nextCandidate = effectiveQueue[nextIdx];
+      if (
+        nextCandidate?.videoId &&
+        nextCandidate.videoId !== track.videoId &&
+        playerRef.current &&
+        typeof playerRef.current.preloadNextStreamUrl === 'function'
+      ) {
+        plannedNextRef.current = { fromVideoId: track.videoId, track: nextCandidate };
+        playerRef.current.preloadNextStreamUrl(nextCandidate.videoId);
       }
     }
 
@@ -370,7 +401,7 @@ export const AudioProvider = ({ children }) => {
     if (nextTrack?.videoId && player && typeof player.preloadNextStreamUrl === 'function') {
       player.preloadNextStreamUrl(nextTrack.videoId);
     }
-  }, [currentTrack, queue, isShuffle, isPlayerReady, playerEpoch]);
+  }, [currentTrack, currentTrackIndex, queue, isShuffle, isPlaying, isPlayerReady, playerEpoch]);
 
   // Skip track forward or backward with direction (+1 or -1)
   const skipTrack = useCallback((direction = 1) => {
