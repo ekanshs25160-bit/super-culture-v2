@@ -50,7 +50,7 @@ describe('Standalone Native Mobile Suite (Backend Turned OFF)', () => {
     const origPlatform = Capacitor.getPlatform;
     Capacitor.isNativePlatform = () => true;
     Capacitor.getPlatform = () => 'android';
-    setNativeProxyPortForTesting(8888);
+    setNativeProxyPortForTesting(8888, 'test-secret-token-123');
 
     setMockWatchPageForTesting({ visitorData: 'mock-vd', sts: 20760 });
 
@@ -107,6 +107,7 @@ describe('Standalone Native Mobile Suite (Backend Turned OFF)', () => {
       assert.ok(res.url.startsWith('http://127.0.0.1:8888/stream?url='), 'Should route through local loopback proxy');
       assert.ok(res.url.includes(encodeURIComponent('https://googlevideo.com/videoplayback?id=test-vid-2-m4a')));
       assert.ok(res.url.includes(encodeURIComponent(VISIONOS_USER_AGENT)));
+      assert.ok(res.url.includes('&k=test-secret-token-123'), 'Should include proxy secret token parameter');
       assert.equal(res.directUrl, 'https://googlevideo.com/videoplayback?id=test-vid-2-m4a');
       assert.equal(res.throttled, false);
       assert.equal(res.isNative, true);

@@ -4,8 +4,12 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -14,6 +18,24 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StreamProxyPlugin.class);
         super.onCreate(savedInstanceState);
         LocalStreamProxy.start(this);
+
+        // Edge-to-Edge Safe Area Insets for Android 15 (targetSdk 35/36)
+        View rootView = findViewById(android.R.id.content);
+        if (rootView != null) {
+            rootView.setBackgroundColor(0xFF0B0B0C);
+            ViewCompat.setOnApplyWindowInsetsListener(rootView, (view, windowInsets) -> {
+                Insets insets = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
+                );
+                view.setPadding(insets.left, insets.top, insets.right, insets.bottom);
+                return windowInsets;
+            });
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(0xFF0B0B0C);
+            getWindow().setNavigationBarColor(0xFF0B0B0C);
+        }
 
         try {
             if (getBridge() != null && getBridge().getWebView() != null) {

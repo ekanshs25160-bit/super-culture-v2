@@ -49,7 +49,28 @@ class MediaPlaybackService : Service() {
         const val EXTRA_IS_PLAYING = "extra_is_playing"
         const val EXTRA_POSITION = "extra_position"
 
-        private const val PAUSE_RELEASE_TIMEOUT_MS = 5 * 60 * 1000L // 5 minutes
+        const val WAKELOCK_TIMEOUT_MS = 10 * 60 * 1000L // 10 minutes
+        const val PAUSE_RELEASE_TIMEOUT_MS = 5 * 60 * 1000L // 5 minutes
+        const val ACTION_REFRESH_WAKELOCK = "com.superculture.app.ACTION_REFRESH_WAKELOCK"
+
+        @Volatile
+        private var instance: MediaPlaybackService? = null
+
+        @JvmStatic
+        @JvmOverloads
+        fun refreshWakeLock(context: Context? = null) {
+            val service = instance
+            if (service != null) {
+                service.mainHandler.post {
+                    service.onChunksFlowing()
+                }
+            } else if (context != null) {
+                val intent = Intent(context, MediaPlaybackService::class.java).apply {
+                    action = ACTION_REFRESH_WAKELOCK
+                }
+                startServiceSafely(context, intent)
+            }
+        }
 
         @JvmStatic
         fun updateMetadata(
@@ -131,15 +152,33 @@ class MediaPlaybackService : Service() {
 
     private val delayedReleaseRunnable = Runnable {
         if (!currentIsPlaying) {
-            Log.i(TAG, "Paused for > 5 minutes; releasing wake locks.")
+            Log.i(TAG, "Paused for > 5 minutes; releasing wake locks and stopping foreground mode.")
             releaseLocks()
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping foreground mode: ${e.message}")
+            }
+            isForegroundStarted = false
         }
+    }
+
+    fun onChunksFlowing() {
+        currentIsPlaying = true
+        mainHandler.removeCallbacks(delayedReleaseRunnable)
+        acquireLocks()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         createNotificationChannel()
         initLocks()
         initMediaSession()
@@ -160,25 +199,48 @@ class MediaPlaybackService : Service() {
                 return START_NOT_STICKY
             }
 
+            ACTION_REFRESH_WAKELOCK -> {
+                currentIsPlaying = true
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
+                acquireLocks()
+                return START_STICKY
+            }
+
             ACTION_NOTIFICATION_PLAY -> {
+                currentIsPlaying = true
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
+                acquireLocks()
+                updateMediaSessionPlaybackState()
                 ensureForeground()
                 StreamProxyPlugin.emitMediaAction("play", null)
                 return START_STICKY
             }
 
             ACTION_NOTIFICATION_PAUSE -> {
+                currentIsPlaying = false
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
+                mainHandler.postDelayed(delayedReleaseRunnable, PAUSE_RELEASE_TIMEOUT_MS)
+                updateMediaSessionPlaybackState()
                 ensureForeground()
                 StreamProxyPlugin.emitMediaAction("pause", null)
                 return START_STICKY
             }
 
             ACTION_NOTIFICATION_NEXT -> {
+                currentIsPlaying = true
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
+                acquireLocks()
+                updateMediaSessionPlaybackState()
                 ensureForeground()
                 StreamProxyPlugin.emitMediaAction("next", null)
                 return START_STICKY
             }
 
             ACTION_NOTIFICATION_PREV -> {
+                currentIsPlaying = true
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
+                acquireLocks()
+                updateMediaSessionPlaybackState()
                 ensureForeground()
                 StreamProxyPlugin.emitMediaAction("previous", null)
                 return START_STICKY
@@ -196,6 +258,7 @@ class MediaPlaybackService : Service() {
 
                 // Always acquire locks and cancel any pending pause timeout on track metadata update
                 mainHandler.removeCallbacks(delayedReleaseRunnable)
+                currentIsPlaying = true
                 acquireLocks()
 
                 if (newArtUrl.isNotEmpty() && newArtUrl != currentArtworkUrl) {
@@ -242,6 +305,9 @@ class MediaPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        if (instance == this) {
+            instance = null
+        }
         mainHandler.removeCallbacks(delayedReleaseRunnable)
         releaseLocks()
         try {
@@ -281,11 +347,9 @@ class MediaPlaybackService : Service() {
         }
     }
 
-    private fun acquireLocks() {
+    fun acquireLocks() {
         try {
-            if (wakeLock?.isHeld == false) {
-                wakeLock?.acquire()
-            }
+            wakeLock?.acquire(WAKELOCK_TIMEOUT_MS)
         } catch (e: Exception) {
             Log.w(TAG, "WakeLock acquire error: ${e.message}")
         }
@@ -316,6 +380,7 @@ class MediaPlaybackService : Service() {
         session.setCallback(object : MediaSession.Callback() {
             override fun onPlay() {
                 currentIsPlaying = true
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
                 acquireLocks()
                 updateMediaSessionPlaybackState()
                 ensureForeground()
@@ -324,17 +389,23 @@ class MediaPlaybackService : Service() {
 
             override fun onPause() {
                 currentIsPlaying = false
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
+                mainHandler.postDelayed(delayedReleaseRunnable, PAUSE_RELEASE_TIMEOUT_MS)
                 updateMediaSessionPlaybackState()
                 ensureForeground()
                 StreamProxyPlugin.emitMediaAction("pause", null)
             }
 
             override fun onSkipToNext() {
+                currentIsPlaying = true
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
                 acquireLocks()
                 StreamProxyPlugin.emitMediaAction("next", null)
             }
 
             override fun onSkipToPrevious() {
+                currentIsPlaying = true
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
                 acquireLocks()
                 StreamProxyPlugin.emitMediaAction("previous", null)
             }
@@ -347,6 +418,8 @@ class MediaPlaybackService : Service() {
 
             override fun onStop() {
                 currentIsPlaying = false
+                mainHandler.removeCallbacks(delayedReleaseRunnable)
+                mainHandler.postDelayed(delayedReleaseRunnable, PAUSE_RELEASE_TIMEOUT_MS)
                 updateMediaSessionPlaybackState()
                 StreamProxyPlugin.emitMediaAction("pause", null)
             }

@@ -144,6 +144,31 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
+## 🔒 Privacy & Data Handling
+
+**Stored locally on your device** (browser storage / app sandbox): playlists, liked tracks, the playback queue and position, app settings, and a short-lived `visitorData` cache used to talk to YouTube. Nothing else is persisted.
+
+**Standalone Android app:** the phone connects **directly** to YouTube (`youtube.com`, `music.youtube.com`, and `*.googlevideo.com` for audio) through an on-device resolver and a loopback-only stream proxy (`127.0.0.1`, protected by a per-launch secret and a strict `googlevideo.com` allowlist). There is **no intermediate tracking or analytics server**. Android cloud auto-backup is disabled (`android:allowBackup="false"`), so local data is never uploaded to Google Drive backups.
+
+**Update checks:** the app optionally queries the public GitHub Releases API (`VITE_GITHUB_REPO`, cached for 12 hours) to tell you when a new APK is available; no personal data is sent.
+
+---
+
+## 🚀 Releasing the Android APK
+
+Pushing a tag such as `v1.0.1` runs [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml): tests → frontend build → `cap sync` → signed `assembleRelease` → APK attached to the GitHub Release. Configure these repository secrets for a properly signed build (without them the APK falls back to debug signing):
+
+| Secret | Purpose |
+|:---|:---|
+| `ANDROID_KEYSTORE_BASE64` | Base64-encoded release keystore (`base64 -i release.keystore`) |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Key alias |
+| `ANDROID_KEY_PASSWORD` | Key password (defaults to the keystore password) |
+
+The app version shown in **Settings → App Updates** comes from `frontend/package.json`; keep it in sync with the release tag.
+
+---
+
 ## 🐳 Quickstart (Docker)
 
 Spin up the entire application using the single-port production Docker container:
@@ -207,6 +232,7 @@ Configure application settings in `.env` (refer to [`.env.example`](file:///User
 | `MAX_AI_CALLS_PER_DAY` | Optional | `100` | Global daily quota cap for Gemini AI calls to prevent overruns |
 | `GEMINI_API_KEY` | Optional | `""` | Google Gemini API key for Magic Vibe generation and AI DJ curation |
 | `DB_PATH` | Optional | `data/super_culture.db` | SQLite database file location |
+| `VITE_GITHUB_REPO` | Optional (frontend) | `ekanshs25160-bit/super-culture-v2` | `owner/repo` queried for in-app update checks |
 
 ---
 
