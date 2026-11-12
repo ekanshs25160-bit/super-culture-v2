@@ -12,6 +12,7 @@ import LeftSidebar from './components/LeftSidebar';
 import RightSidebar from './components/RightSidebar';
 import PlayerBar from './components/PlayerBar';
 import InstallPrompt from './components/InstallPrompt';
+import UpdateBanner from './components/UpdateBanner';
 import { AddToPlaylistModal } from './components/shared';
 
 // Page Views
@@ -52,6 +53,8 @@ function AppLayout() {
     >
       {/* Layer 0: Background & Hairline Grid */}
       <EditorialBackground />
+
+      <UpdateBanner />
 
       {/* 1. Top Bar */}
       <TopBar />

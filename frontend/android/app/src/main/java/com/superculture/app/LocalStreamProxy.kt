@@ -38,6 +38,14 @@ object LocalStreamProxy {
     var secret: String = ""
         private set
 
+    /**
+     * Test-only seam: when set and it returns true for the requested upstream URI, the HTTPS /
+     * googlevideo / public-IP allowlist is skipped so unit tests can target a loopback mock server.
+     * Always null in production; never assigned outside of tests.
+     */
+    @Volatile
+    internal var testUpstreamAllowance: ((URI) -> Boolean)? = null
+
     @Volatile
     private var isRunning = false
     @Volatile
@@ -196,6 +204,11 @@ object LocalStreamProxy {
                 URI(upstreamUrl)
             } catch (_: Exception) {
                 null
+            }
+
+            if (uri != null && testUpstreamAllowance?.invoke(uri) == true) {
+                serveChunkedStream(client, method, upstreamUrl, userAgent, headers["range"], origin, isAllowedOrigin)
+                return
             }
 
             val isHttps = uri?.scheme?.lowercase() == "https"

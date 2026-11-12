@@ -1,11 +1,12 @@
 import React, { useState, useContext } from 'react';
-import { Volume2, Shield, Smile, Trash2, Check, Copy, Radio, Download, Smartphone } from 'lucide-react';
+import { Volume2, Shield, Smile, Trash2, Check, Copy, Radio, Download, Smartphone, RefreshCw } from 'lucide-react';
 import { PageHeader } from '../components/shared';
 import { AudioContext } from '../context/AudioContext';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { useUiStore } from '../store/useUiStore';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import { getGuestId } from '../services/api';
+import { APP_VERSION, GITHUB_REPO, checkForUpdate, openExternal } from '../services/updateService';
 
 const PLAYBACK_ENGINES = [
   { id: 'Auto', label: 'Auto', desc: 'Background audio on mobile, YouTube on desktop' },
@@ -40,6 +41,21 @@ export default function SettingsView() {
   const [selectedQuality, setSelectedQuality] = useState('24bit');
   const [crossfade, setCrossfade] = useState(2);
   const guestId = getGuestId();
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateError, setUpdateError] = useState('');
+
+  const handleCheckUpdate = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateError('');
+    try {
+      setUpdateInfo(await checkForUpdate({ force: true }));
+    } catch (e) {
+      setUpdateError(e?.message || 'Could not reach GitHub');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   const handleCopyGuestId = () => {
     navigator.clipboard?.writeText(guestId);
@@ -346,6 +362,46 @@ export default function SettingsView() {
               </button>
             </div>
           </div>
+        </section>
+
+        {/* 5. App Updates (GitHub Releases) */}
+        <section className="sc-card p-4 rounded-2xl">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-xs font-semibold text-[#F4F4F2] uppercase tracking-wider">App Updates</h2>
+              <p className="text-xs text-[#8A8A8E] mt-0.5 truncate">
+                Version {APP_VERSION} · {GITHUB_REPO}
+              </p>
+            </div>
+            <button
+              onClick={handleCheckUpdate}
+              disabled={isCheckingUpdate}
+              aria-label="Check for app updates"
+              className="sc-pill shrink-0 min-h-[36px] px-3 py-1 bg-white/10 hover:bg-white/20 text-xs text-[#F4F4F2] flex items-center gap-1.5 transition cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin' : ''}`} aria-hidden="true" />
+              <span>{isCheckingUpdate ? 'Checking…' : 'Check for Updates'}</span>
+            </button>
+          </div>
+
+          {updateError && <p className="text-xs text-red-400">Update check failed: {updateError}</p>}
+          {updateInfo && !updateInfo.hasUpdate && (
+            <p className="text-xs text-[#1ED760]">You're up to date (v{updateInfo.currentVersion}).</p>
+          )}
+          {updateInfo?.hasUpdate && (
+            <div className="p-3 rounded-xl bg-white/[0.04] border border-white/10 space-y-2">
+              <p className="text-sm text-[#F4F4F2] font-semibold">Version {updateInfo.latestVersion} is available</p>
+              {updateInfo.notes && <p className="text-xs text-[#8A8A8E] break-words">{updateInfo.notes}</p>}
+              <button
+                onClick={() => openExternal(updateInfo.apkUrl || updateInfo.releaseUrl)}
+                aria-label="Download latest APK"
+                className="sc-pill min-h-[36px] px-4 py-1.5 !bg-[#1ED760] !text-[#0B0B0C] text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{updateInfo.apkUrl ? 'Download Latest APK' : 'Open Release Page'}</span>
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </div>
