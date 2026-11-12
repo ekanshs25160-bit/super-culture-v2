@@ -34,18 +34,22 @@ class StreamProxyPlugin : Plugin() {
     @PluginMethod
     fun getProxyUrl(call: PluginCall) {
         val port = LocalStreamProxy.start(context)
+        val secret = LocalStreamProxy.secret
         val ret = JSObject()
         ret.put("baseUrl", "http://127.0.0.1:$port")
         ret.put("port", port)
+        ret.put("secret", secret)
         call.resolve(ret)
     }
 
     @PluginMethod
     fun getProxyPort(call: PluginCall) {
         val port = LocalStreamProxy.start(context)
+        val secret = LocalStreamProxy.secret
         val ret = JSObject()
         ret.put("port", port)
         ret.put("baseUrl", "http://127.0.0.1:$port")
+        ret.put("secret", secret)
         call.resolve(ret)
     }
 

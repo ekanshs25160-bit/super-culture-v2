@@ -9,8 +9,11 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.URI
 import java.net.URL
 import java.net.URLDecoder
+import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.regex.Pattern
 
@@ -32,10 +35,15 @@ object LocalStreamProxy {
         private set
 
     @Volatile
+    var secret: String = ""
+        private set
+
+    @Volatile
     private var isRunning = false
     private var serverSocket: ServerSocket? = null
     private val executor = Executors.newCachedThreadPool()
     private val totalLengthPattern = Pattern.compile("/(\\d+)\\s*$")
+    private val googlevideoHostRegex = Regex("""^[a-z0-9-]+(\.[a-z0-9-]+)*\.googlevideo\.com$""", RegexOption.IGNORE_CASE)
 
     @JvmStatic
     @JvmOverloads
@@ -43,12 +51,15 @@ object LocalStreamProxy {
     fun start(context: Context? = null): Int {
         if (isRunning && port > 0) return port
         try {
+            if (secret.isEmpty()) {
+                secret = UUID.randomUUID().toString()
+            }
             // Bind to loopback interface on an ephemeral port
             val socket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
             serverSocket = socket
             port = socket.localPort
             isRunning = true
-            Log.i(TAG, "LocalStreamProxy started on 127.0.0.1:$port")
+            Log.i(TAG, "LocalStreamProxy started on 127.0.0.1:$port with secret token")
 
             executor.execute {
                 while (isRunning && !socket.isClosed) {
@@ -78,6 +89,7 @@ object LocalStreamProxy {
         }
         serverSocket = null
         port = 0
+        secret = ""
         Log.i(TAG, "LocalStreamProxy stopped")
     }
 
@@ -105,13 +117,17 @@ object LocalStreamProxy {
                 line = reader.readLine()
             }
 
+            val origin = headers["origin"]
+            val isAllowedOrigin = origin == "http://localhost" || origin == "https://localhost"
+
             // Handle CORS preflight
             if (method == "OPTIONS") {
                 val out = client.getOutputStream()
+                val corsHeader = if (isAllowedOrigin) "Access-Control-Allow-Origin: $origin\r\nVary: Origin\r\n" else ""
                 val response = "HTTP/1.1 200 OK\r\n" +
-                        "Access-Control-Allow-Origin: *\r\n" +
+                        corsHeader +
                         "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n" +
-                        "Access-Control-Allow-Headers: *\r\n" +
+                        "Access-Control-Allow-Headers: Range, User-Agent, Accept\r\n" +
                         "Content-Length: 0\r\n\r\n"
                 out.write(response.toByteArray(Charsets.ISO_8859_1))
                 out.flush()
@@ -131,6 +147,7 @@ object LocalStreamProxy {
             val queryString = if (queryIdx >= 0) fullPath.substring(queryIdx + 1) else ""
             var upstreamUrl: String? = null
             var userAgent = DEFAULT_USER_AGENT
+            var clientKey: String? = null
 
             for (param in queryString.split("&")) {
                 val kv = param.split("=", limit = 2)
@@ -139,9 +156,28 @@ object LocalStreamProxy {
                     val v = URLDecoder.decode(kv[1], "UTF-8")
                     if (k == "url") upstreamUrl = v
                     if (k == "ua") userAgent = v
+                    if (k == "k") clientKey = v
                 }
             }
 
+            // 1. Per-launch secret token verification (constant-time comparison)
+            val currentSecret = secret
+            val isKeyValid = currentSecret.isNotEmpty() && clientKey != null &&
+                    MessageDigest.isEqual(
+                        clientKey.toByteArray(Charsets.UTF_8),
+                        currentSecret.toByteArray(Charsets.UTF_8)
+                    )
+
+            if (!isKeyValid) {
+                Log.w(TAG, "Rejected stream request: missing or invalid secret token")
+                val out = client.getOutputStream()
+                val response = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"
+                out.write(response.toByteArray(Charsets.ISO_8859_1))
+                out.flush()
+                return
+            }
+
+            // 2. Strict Upstream URL Allowlist & SSRF / DNS rebinding validation
             if (upstreamUrl.isNullOrEmpty()) {
                 val out = client.getOutputStream()
                 val response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
@@ -150,7 +186,52 @@ object LocalStreamProxy {
                 return
             }
 
-            serveChunkedStream(client, method, upstreamUrl, userAgent, headers["range"])
+            val uri = try {
+                URI(upstreamUrl)
+            } catch (_: Exception) {
+                null
+            }
+
+            val isHttps = uri?.scheme?.lowercase() == "https"
+            val hasNoUserInfo = uri?.userInfo == null
+            val isAllowedPort = uri?.port == -1 || uri?.port == 443
+            val host = uri?.host
+            val isHostAllowed = host != null && googlevideoHostRegex.matches(host)
+
+            if (uri == null || !isHttps || !hasNoUserInfo || !isAllowedPort || !isHostAllowed) {
+                Log.w(TAG, "Rejected untrusted upstream URL: $upstreamUrl")
+                val out = client.getOutputStream()
+                val response = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"
+                out.write(response.toByteArray(Charsets.ISO_8859_1))
+                out.flush()
+                return
+            }
+
+            // Validate resolved InetAddress is NOT a loopback, link-local, site-local, or multicast address
+            val isPublicIp = try {
+                val addresses = InetAddress.getAllByName(host)
+                addresses.isNotEmpty() && addresses.all { addr ->
+                    !addr.isLoopbackAddress &&
+                    !addr.isLinkLocalAddress &&
+                    !addr.isSiteLocalAddress &&
+                    !addr.isMulticastAddress &&
+                    !addr.isAnyLocalAddress
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "DNS resolution failed for host $host: ${e.message}")
+                false
+            }
+
+            if (!isPublicIp) {
+                Log.w(TAG, "Rejected host resolving to private/loopback IP: $host")
+                val out = client.getOutputStream()
+                val response = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"
+                out.write(response.toByteArray(Charsets.ISO_8859_1))
+                out.flush()
+                return
+            }
+
+            serveChunkedStream(client, method, upstreamUrl, userAgent, headers["range"], origin, isAllowedOrigin)
         } catch (e: Exception) {
             // Broken pipe or socket timeout is normal when seeking or pausing
             Log.d(TAG, "Client handle ended: ${e.message}")
@@ -166,7 +247,9 @@ object LocalStreamProxy {
         method: String,
         upstreamUrl: String,
         userAgent: String,
-        clientRange: String?
+        clientRange: String?,
+        origin: String?,
+        isAllowedOrigin: Boolean
     ) {
         val out = client.getOutputStream()
 
@@ -245,7 +328,10 @@ object LocalStreamProxy {
             headerBuilder.append("Content-Range: bytes ")
                 .append(start).append("-").append(finalEnd).append("/").append(total).append("\r\n")
         }
-        headerBuilder.append("Access-Control-Allow-Origin: *\r\n")
+        if (isAllowedOrigin && origin != null) {
+            headerBuilder.append("Access-Control-Allow-Origin: ").append(origin).append("\r\n")
+            headerBuilder.append("Vary: Origin\r\n")
+        }
         headerBuilder.append("Cache-Control: private, no-store\r\n")
         headerBuilder.append("Connection: keep-alive\r\n\r\n")
 

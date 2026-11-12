@@ -40,11 +40,26 @@ let watchPageInflight = null;
 
 // Test seam overrides
 let testProxyPort = null;
+let testProxySecret = null;
+let proxySecret = '';
 let testPlayerResponse = null;
 let testWatchPageContext = null;
 
-export function setNativeProxyPortForTesting(port) {
+export function setNativeProxyPortForTesting(port, secret = null) {
   testProxyPort = port;
+  if (secret !== null) {
+    testProxySecret = secret;
+    proxySecret = secret;
+  }
+}
+
+export function setNativeProxySecretForTesting(secret) {
+  testProxySecret = secret;
+  proxySecret = secret || '';
+}
+
+export function getProxySecret() {
+  return proxySecret;
 }
 
 export function setMockPlayerResponseForTesting(mock) {
@@ -185,16 +200,21 @@ export async function getWatchPageVisitorData(videoId, forceRefresh = false) {
  */
 export async function getLocalProxyUrl() {
   if (testProxyPort !== null) {
+    if (testProxySecret !== null) {
+      proxySecret = testProxySecret;
+    }
     return testProxyPort > 0 ? `http://127.0.0.1:${testProxyPort}` : '';
   }
   try {
     if (typeof StreamProxy.getProxyUrl === 'function') {
       const res = await StreamProxy.getProxyUrl();
+      if (res?.secret) proxySecret = res.secret;
       if (res?.baseUrl) return res.baseUrl.replace(/\/$/, '');
       if (res?.port > 0) return `http://127.0.0.1:${res.port}`;
     }
     if (typeof StreamProxy.getProxyPort === 'function') {
       const res = await StreamProxy.getProxyPort();
+      if (res?.secret) proxySecret = res.secret;
       if (res?.baseUrl) return res.baseUrl.replace(/\/$/, '');
       if (res?.port > 0) return `http://127.0.0.1:${res.port}`;
     }
@@ -359,7 +379,8 @@ async function wrapWithLocalProxy(upstreamUrl, userAgent) {
   if (isAndroid) {
     const baseUrl = await getLocalProxyUrl();
     if (baseUrl) {
-      return `${baseUrl}/stream?url=${encodeURIComponent(upstreamUrl)}&ua=${encodeURIComponent(userAgent)}`;
+      const tokenParam = proxySecret ? `&k=${encodeURIComponent(proxySecret)}` : '';
+      return `${baseUrl}/stream?url=${encodeURIComponent(upstreamUrl)}&ua=${encodeURIComponent(userAgent)}${tokenParam}`;
     }
   }
   return upstreamUrl;
@@ -1054,6 +1075,8 @@ export default {
   getWatchPageVisitorData,
   getLocalProxyUrl,
   getLocalProxyPort,
+  getProxySecret,
+  setNativeProxySecretForTesting,
   search,
   getHomeShelves,
   getArtist,
