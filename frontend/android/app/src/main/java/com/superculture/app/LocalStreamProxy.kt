@@ -40,6 +40,8 @@ object LocalStreamProxy {
 
     @Volatile
     private var isRunning = false
+    @Volatile
+    private var appContext: Context? = null
     private var serverSocket: ServerSocket? = null
     private val executor = Executors.newCachedThreadPool()
     private val totalLengthPattern = Pattern.compile("/(\\d+)\\s*$")
@@ -49,6 +51,9 @@ object LocalStreamProxy {
     @JvmOverloads
     @Synchronized
     fun start(context: Context? = null): Int {
+        if (context != null) {
+            appContext = context.applicationContext
+        }
         if (isRunning && port > 0) return port
         try {
             if (secret.isEmpty()) {
@@ -82,6 +87,7 @@ object LocalStreamProxy {
     @JvmStatic
     fun stop() {
         isRunning = false
+        appContext = null
         try {
             serverSocket?.close()
         } catch (e: Exception) {
@@ -341,6 +347,7 @@ object LocalStreamProxy {
         if (method == "HEAD") return
 
         // 3. Sequentially stream 1 MiB bounded chunks to the client socket
+        MediaPlaybackService.refreshWakeLock(appContext)
         var pos = start
         val buffer = ByteArray(16384)
 
@@ -370,6 +377,7 @@ object LocalStreamProxy {
                 }
                 out.flush()
                 input.close()
+                MediaPlaybackService.refreshWakeLock(appContext)
             } catch (e: Exception) {
                 // Client cancelled or socket closed
                 break
