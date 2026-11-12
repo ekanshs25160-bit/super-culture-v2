@@ -40,12 +40,12 @@ export default function PageHeader({
 
       {/* Main Title Row with Optional Back Button & Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
           {(backTo || onBack) && (
             <button
               onClick={handleBack}
               aria-label={`Go back to ${backLabel}`}
-              className="sc-pill px-3 py-1 text-xs text-[#F4F4F2] hover:text-white flex items-center gap-1.5 transition cursor-pointer shrink-0"
+              className="sc-pill min-h-[36px] px-3 py-1 text-xs text-[#F4F4F2] hover:text-white flex items-center gap-1.5 transition cursor-pointer shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
               <span>{backLabel}</span>
@@ -57,7 +57,7 @@ export default function PageHeader({
         </div>
 
         {children && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {children}
           </div>
         )}

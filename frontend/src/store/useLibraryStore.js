@@ -57,9 +57,14 @@ export const useLibraryStore = create((set, get) => ({
       const serverPlaylists = Array.isArray(data.playlists) ? data.playlists : [];
       const mergedPlaylists = serverPlaylists.map((p) => {
         const localTracks = loadSavedTracks(p.id);
+        const rawTracks = Array.isArray(p.tracks) && p.tracks.length > 0 ? p.tracks : localTracks;
         return {
           ...p,
-          tracks: Array.isArray(p.tracks) && p.tracks.length > 0 ? p.tracks : localTracks,
+          tracks: rawTracks.map((t, idx) =>
+            normalizeTrack(t, {
+              addedAt: t.addedAt !== undefined ? t.addedAt : (1000000 + idx),
+            })
+          ),
         };
       });
 
@@ -183,14 +188,16 @@ export const useLibraryStore = create((set, get) => ({
 
   addTrackToPlaylist: (playlistId, track) => {
     if (!playlistId || !track) return { added: false, reason: 'invalid_args' };
-    const normalized = normalizeTrack(track);
-    if (!normalized?.videoId) return { added: false, reason: 'invalid_track' };
-
     const playlists = get().playlists;
     const target = playlists.find((p) => p.id === playlistId);
     if (!target) return { added: false, reason: 'not_found' };
 
     const existingTracks = Array.isArray(target.tracks) ? target.tracks : [];
+    const baseTimestamp = Date.now();
+    const normalized = normalizeTrack(track, {
+      addedAt: baseTimestamp + existingTracks.length,
+    });
+    if (!normalized?.videoId) return { added: false, reason: 'invalid_track' };
     const isDuplicate = existingTracks.some(
       (t) => (t.videoId && t.videoId === normalized.videoId) || t.id === normalized.id
     );
@@ -295,7 +302,14 @@ export const useLibraryStore = create((set, get) => ({
     if (!created) return null;
 
     if (Array.isArray(tracks) && tracks.length > 0) {
-      const normalizedList = tracks.map(normalizeTrack).filter(Boolean);
+      const baseTimestamp = Date.now();
+      const normalizedList = tracks
+        .map((t, idx) =>
+          normalizeTrack(t, {
+            addedAt: t.addedAt !== undefined ? t.addedAt : (baseTimestamp + idx),
+          })
+        )
+        .filter(Boolean);
       const playlists = get().playlists;
       const nextPlaylists = playlists.map((p) =>
         p.id === created.id ? { ...p, tracks: normalizedList } : p

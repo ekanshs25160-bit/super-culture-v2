@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Upload, X, Loader2, Music, CheckCircle2, AlertCircle } from 'lucide-react';
-import { parseCsvPlaylist } from '../../utils/csvPlaylistParser';
+import { parseCsvPlaylist, normalizeTrackMetadata } from '../../utils/csvPlaylistParser';
 import { apiClient } from '../../services/api';
 import { useLibraryStore } from '../../store/useLibraryStore';
 
@@ -59,6 +59,7 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
     const totalCount = parsedTracks.length;
     setProgress({ current: 0, total: totalCount });
 
+    const baseImportTimestamp = Date.now();
     const matchedTracks = [];
     let currentIndex = 0;
     let completedCount = 0;
@@ -86,19 +87,16 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
 
           if (rawTracks.length > 0 && (rawTracks[0].videoId || rawTracks[0].id)) {
             const match = rawTracks[0];
-            matchedTracks.push({
-              videoId: match.videoId || match.id,
-              title: match.title || row.title,
-              artist: match.artist || row.artist,
-              album: match.album || row.album || '',
-              cover:
-                match.cover ||
-                match.thumbnail ||
-                row.artworkUrl ||
-                'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-              duration: match.duration || '',
-              seconds: match.seconds || (row.durationMs ? Math.round(row.durationMs / 1000) : 0),
-            });
+            matchedTracks.push(
+              normalizeTrackMetadata(match, {
+                title: row.title,
+                artist: row.artist,
+                album: row.album,
+                durationMs: row.durationMs,
+                artworkUrl: row.artworkUrl,
+                addedAt: baseImportTimestamp + idx,
+              })
+            );
           }
         } catch (err) {
           console.warn(`[CsvImportModal] Match failed for "${row.title}":`, err?.message);
@@ -126,6 +124,9 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
       return;
     }
 
+    // Preserve original CSV order based on addedAt (baseImportTimestamp + idx)
+    matchedTracks.sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
+
     try {
       const created = await createPlaylistWithMultipleTracks(finalName, matchedTracks);
       const msg = `Imported ${matchedTracks.length} of ${totalCount} tracks into "${finalName}"`;
@@ -149,7 +150,7 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
       aria-labelledby="csv-import-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
     >
-      <div className="relative w-full max-w-lg bg-[#141416]/95 border border-white/15 rounded-3xl p-6 shadow-2xl flex flex-col gap-4 text-[#F4F4F2]">
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#141416]/95 border border-white/15 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col gap-4 text-[#F4F4F2]">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div>
@@ -287,12 +288,12 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
           )}
 
           {/* Modal Action Buttons */}
-          <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/10">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2 border-t border-white/10">
             {isImporting ? (
               <button
                 type="button"
                 onClick={handleCancelImport}
-                className="px-4 py-2 rounded-full text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition cursor-pointer"
+                className="shrink-0 min-h-[36px] sm:min-h-[40px] px-4 py-2 rounded-full text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition cursor-pointer"
               >
                 Cancel Import
               </button>
@@ -301,14 +302,14 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 rounded-full text-xs font-medium text-[#8A8A8E] hover:text-white hover:bg-white/5 transition cursor-pointer"
+                  className="shrink-0 min-h-[36px] sm:min-h-[40px] px-4 py-2 rounded-full text-xs font-medium text-[#8A8A8E] hover:text-white hover:bg-white/5 transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={parsedTracks.length === 0}
-                  className="px-5 py-2 rounded-full bg-[#1ED760] hover:bg-[#22e868] disabled:opacity-40 text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-md"
+                  className="shrink-0 min-h-[36px] sm:min-h-[40px] px-5 py-2 rounded-full bg-[#1ED760] hover:bg-[#22e868] disabled:opacity-40 text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-md"
                 >
                   <span>Import &amp; Create Playlist</span>
                 </button>

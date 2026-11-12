@@ -21,13 +21,13 @@ export default function PlayerTransport({
 }) {
   return (
     <div className="flex flex-col items-center justify-center w-full md:w-[40%] max-w-[520px]">
-      <div className="flex items-center gap-4 mb-1.5">
+      <div className="flex items-center gap-2 sm:gap-4 mb-1.5">
         {/* Shuffle (Desktop only; on mobile lives in tray/sheet) */}
         <button
           onClick={onToggleShuffle}
           aria-label="Toggle shuffle"
           title="Toggle shuffle"
-          className={`hidden md:inline-flex min-w-[44px] min-h-[44px] rounded-full items-center justify-center transition cursor-pointer ${
+          className={`hidden md:inline-flex shrink-0 min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] rounded-full items-center justify-center transition cursor-pointer ${
             isShuffle
               ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)]'
               : 'text-[#8A8A8E] hover:text-white'
@@ -43,7 +43,7 @@ export default function PlayerTransport({
           onClick={onSkipPrev}
           aria-label="Previous track"
           title="Previous track"
-          className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition text-[#F4F4F2]/85 hover:text-white cursor-pointer"
+          className="shrink-0 min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] rounded-full flex items-center justify-center transition text-[#F4F4F2]/85 hover:text-white cursor-pointer"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 20L9 12l10-8v16zM5 19V5" />
@@ -57,7 +57,7 @@ export default function PlayerTransport({
             onClick={onTogglePlay}
             aria-label="Tap to play audio"
             title="Tap to play audio"
-            className="min-h-[44px] px-4 rounded-full bg-[#1ED760] text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(30,215,96,0.6)] transition hover:scale-105 active:scale-95 animate-pulse cursor-pointer"
+            className="shrink-0 min-h-[40px] sm:min-h-[44px] px-3.5 sm:px-4 rounded-full bg-[#1ED760] text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(30,215,96,0.6)] transition hover:scale-105 active:scale-95 animate-pulse cursor-pointer"
           >
             <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
@@ -70,7 +70,7 @@ export default function PlayerTransport({
             onClick={onTogglePlay}
             aria-label={isPlaying && !isEmptyPlayer ? 'Pause track' : 'Play track'}
             title={isPlaying && !isEmptyPlayer ? 'Pause track' : 'Play track'}
-            className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.3)] transition bg-[#F4F4F2] text-[#0B0B0C] hover:scale-105 active:scale-95 cursor-pointer"
+            className="w-10 h-10 sm:w-11 sm:h-11 min-w-[40px] sm:min-w-[44px] min-h-[40px] sm:min-h-[44px] shrink-0 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.3)] transition bg-[#F4F4F2] text-[#0B0B0C] hover:scale-105 active:scale-95 cursor-pointer"
           >
             {isPlaying && !isEmptyPlayer ? (
               <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
@@ -90,7 +90,7 @@ export default function PlayerTransport({
           onClick={onSkipNext}
           aria-label="Next track"
           title="Next track"
-          className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition text-[#F4F4F2]/85 hover:text-white cursor-pointer"
+          className="shrink-0 min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] rounded-full flex items-center justify-center transition text-[#F4F4F2]/85 hover:text-white cursor-pointer"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 4l10 8-10 8V4zM19 5v14" />
@@ -114,7 +114,7 @@ export default function PlayerTransport({
               ? 'Repeat: All Tracks'
               : 'Repeat: Off'
           }
-          className={`hidden md:inline-flex min-w-[44px] min-h-[44px] rounded-full items-center justify-center transition cursor-pointer relative ${
+          className={`hidden md:inline-flex shrink-0 min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] rounded-full items-center justify-center transition cursor-pointer relative ${
             isRepeat || repeatMode !== 'off'
               ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)]'
               : 'text-[#8A8A8E] hover:text-white'

@@ -4,6 +4,9 @@ import {
   parseRawCsv,
   parseDurationMs,
   parseCsvPlaylist,
+  formatDuration,
+  normalizeTrackMetadata,
+  sortPlaylistTracks,
 } from '../utils/csvPlaylistParser.js';
 
 describe('CSV Playlist Parser Suite', () => {
@@ -86,5 +89,121 @@ spotify:track:7qiZfU4dY1lWllzX7mPBI3,Shape of You,Ed Sheeran,÷ (Deluxe),2017-03
     assert.equal(res.tracks.length, 1);
     assert.equal(res.tracks[0].title, 'Real Song');
     assert.equal(res.errors.length, 1);
+  });
+
+  it('formatDuration accurately formats milliseconds, seconds, and strings to m:ss', () => {
+    // Spotify Duration (ms) formats
+    assert.equal(formatDuration(214000), '3:34');
+    assert.equal(formatDuration(214533), '3:35');
+    assert.equal(formatDuration(65000), '1:05');
+    assert.equal(formatDuration(3665000), '1:01:05'); // with hours
+
+    // Seconds format
+    assert.equal(formatDuration(214), '3:34');
+    assert.equal(formatDuration(65), '1:05');
+
+    // String formats
+    assert.equal(formatDuration('3:34'), '3:34');
+    assert.equal(formatDuration('03:34'), '3:34');
+    assert.equal(formatDuration('214000'), '3:34');
+    assert.equal(formatDuration(''), '');
+    assert.equal(formatDuration(null), '');
+  });
+
+  it('normalizeTrackMetadata correctly parses duration and preserves artist from search results and CSV fallbacks', () => {
+    // 1. Search result with complete info
+    const searchResult = {
+      videoId: 'vid-123',
+      title: 'Blinding Lights',
+      artist: 'The Weeknd',
+      duration: '3:20',
+      album: 'After Hours',
+    };
+    const normalized1 = normalizeTrackMetadata(searchResult);
+    assert.equal(normalized1.title, 'Blinding Lights');
+    assert.equal(normalized1.artist, 'The Weeknd');
+    assert.equal(normalized1.duration, '3:20');
+    assert.equal(normalized1.seconds, 200);
+
+    // 2. Search result with missing artist & duration, but provided via CSV fallback with Spotify Duration (ms)
+    const sparseResult = {
+      videoId: 'vid-456',
+      title: 'Starboy',
+    };
+    const csvFallback = {
+      title: 'Starboy',
+      artist: 'The Weeknd ft. Daft Punk',
+      album: 'Starboy (Deluxe)',
+      durationMs: 230000, // 3:50
+      addedAt: 1700000000000,
+    };
+    const normalized2 = normalizeTrackMetadata(sparseResult, csvFallback);
+    assert.equal(normalized2.title, 'Starboy');
+    assert.equal(normalized2.artist, 'The Weeknd ft. Daft Punk');
+    assert.equal(normalized2.album, 'Starboy (Deluxe)');
+    assert.equal(normalized2.duration, '3:50');
+    assert.equal(normalized2.seconds, 230);
+    assert.equal(normalized2.addedAt, 1700000000000);
+
+    // 3. Artist variations (author object, channelTitle, artists array)
+    const authorResult = { videoId: 'v3', title: 'Song', author: { name: 'Channel Author' } };
+    assert.equal(normalizeTrackMetadata(authorResult).artist, 'Channel Author');
+
+    const channelResult = { videoId: 'v4', title: 'Song', channelTitle: 'Official Channel' };
+    assert.equal(normalizeTrackMetadata(channelResult).artist, 'Official Channel');
+
+    const artistsArrayResult = { videoId: 'v5', title: 'Song', artists: ['Artist One', 'Artist Two'] };
+    assert.equal(normalizeTrackMetadata(artistsArrayResult).artist, 'Artist One, Artist Two');
+  });
+
+  describe('sortPlaylistTracks Suite', () => {
+    const tracks = [
+      { id: '1', title: 'Zebra', artist: 'Charlie', duration: '3:00', seconds: 180, addedAt: 100 },
+      { id: '2', title: 'Apple', artist: 'Bob', duration: '2:15', seconds: 135, addedAt: 200 },
+      { id: '3', title: 'Mango', artist: 'Alice', duration: '4:30', seconds: 270, addedAt: 300 },
+    ];
+
+    it('sorts by date_desc (newest added first)', () => {
+      const sorted = sortPlaylistTracks(tracks, 'date_desc');
+      assert.deepEqual(sorted.map((t) => t.id), ['3', '2', '1']);
+    });
+
+    it('sorts by date_asc (oldest added first)', () => {
+      const sorted = sortPlaylistTracks(tracks, 'date_asc');
+      assert.deepEqual(sorted.map((t) => t.id), ['1', '2', '3']);
+    });
+
+    it('sorts by title_asc (A to Z)', () => {
+      const sorted = sortPlaylistTracks(tracks, 'title_asc');
+      assert.deepEqual(sorted.map((t) => t.title), ['Apple', 'Mango', 'Zebra']);
+    });
+
+    it('sorts by artist_asc (A to Z)', () => {
+      const sorted = sortPlaylistTracks(tracks, 'artist_asc');
+      assert.deepEqual(sorted.map((t) => t.artist), ['Alice', 'Bob', 'Charlie']);
+    });
+
+    it('sorts by duration_asc (shortest duration first)', () => {
+      const sorted = sortPlaylistTracks(tracks, 'duration_asc');
+      assert.deepEqual(sorted.map((t) => t.id), ['2', '1', '3']);
+    });
+
+    it('preserves custom import order', () => {
+      const sorted = sortPlaylistTracks(tracks, 'custom');
+      assert.deepEqual(sorted.map((t) => t.id), ['1', '2', '3']);
+    });
+
+    it('falls back to index order for legacy tracks without addedAt', () => {
+      const legacyTracks = [
+        { id: 'a', title: 'First' },
+        { id: 'b', title: 'Second' },
+        { id: 'c', title: 'Third' },
+      ];
+      const desc = sortPlaylistTracks(legacyTracks, 'date_desc');
+      assert.deepEqual(desc.map((t) => t.id), ['c', 'b', 'a']);
+
+      const asc = sortPlaylistTracks(legacyTracks, 'date_asc');
+      assert.deepEqual(asc.map((t) => t.id), ['a', 'b', 'c']);
+    });
   });
 });

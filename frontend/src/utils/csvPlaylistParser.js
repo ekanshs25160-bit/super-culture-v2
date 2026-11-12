@@ -265,4 +265,243 @@ export function parseCsvPlaylist(csvContent) {
   return { tracks, errors };
 }
 
+/**
+ * Formats duration into standard "m:ss" (or "h:mm:ss") string.
+ * Accepts milliseconds (e.g. 214533, 214000), seconds (e.g. 214), or pre-formatted strings ("3:34", "03:34").
+ * @param {string|number} duration
+ * @returns {string}
+ */
+export function formatDuration(duration) {
+  if (duration === null || duration === undefined || duration === '') return '';
+
+  if (typeof duration === 'string') {
+    const trimmed = duration.trim();
+    if (trimmed.includes(':')) {
+      const parts = trimmed.split(':');
+      if (parts.length === 2) {
+        const min = parseInt(parts[0], 10);
+        const sec = parts[1].padStart(2, '0');
+        if (!isNaN(min)) return `${min}:${sec}`;
+      }
+      return trimmed;
+    }
+    const num = Number(trimmed);
+    if (!isNaN(num) && num > 0) {
+      return formatDuration(num);
+    }
+    return trimmed;
+  }
+
+  if (typeof duration === 'number' && !isNaN(duration) && duration > 0) {
+    // If > 10000, interpret as milliseconds (Spotify format e.g. 214000)
+    const totalSecs = duration > 10000 ? Math.round(duration / 1000) : Math.round(duration);
+    const hours = Math.floor(totalSecs / 3600);
+    const minutes = Math.floor((totalSecs % 3600) / 60);
+    const seconds = totalSecs % 60;
+    const secStr = seconds < 10 ? `0${seconds}` : `${seconds}`;
+
+    if (hours > 0) {
+      const minStr = minutes < 10 ? `0${minutes}` : `${minutes}`;
+      return `${hours}:${minStr}:${secStr}`;
+    }
+    return `${minutes}:${secStr}`;
+  }
+
+  return '';
+}
+
+/**
+ * Parses duration into numeric total seconds for comparison and player scrubbers.
+ * @param {string|number} duration
+ * @returns {number}
+ */
+export function parseDurationSeconds(duration) {
+  if (duration === null || duration === undefined || duration === '') return 0;
+  if (typeof duration === 'number') {
+    if (isNaN(duration) || duration <= 0) return 0;
+    return duration > 10000 ? Math.round(duration / 1000) : Math.round(duration);
+  }
+  if (typeof duration === 'string') {
+    const trimmed = duration.trim();
+    if (trimmed.includes(':')) {
+      const parts = trimmed.split(':').map((p) => parseFloat(p));
+      if (!parts.some((p) => isNaN(p))) {
+        if (parts.length === 2) return Math.round(parts[0] * 60 + parts[1]);
+        if (parts.length === 3) return Math.round(parts[0] * 3600 + parts[1] * 60 + parts[2]);
+      }
+    }
+    const num = parseFloat(trimmed);
+    if (!isNaN(num) && num > 0) {
+      return num > 10000 ? Math.round(num / 1000) : Math.round(num);
+    }
+  }
+  return 0;
+}
+
+/**
+ * Normalizes track metadata from search APIs, player engines, or CSV fallbacks.
+ * Ensures consistent Title, Artist, Album, Cover, Duration (m:ss), and addedAt timestamp.
+ * @param {Object} track
+ * @param {Object} csvFallback
+ * @returns {Object}
+ */
+export function normalizeTrackMetadata(track = {}, csvFallback = {}) {
+  const safeTrack = track || {};
+  const safeFallback = csvFallback || {};
+
+  // 1. Resolve Title
+  let title = safeTrack.title || safeTrack.name;
+  if (!title || title === 'Untitled Track' || title === 'Unknown Title') {
+    title = safeFallback.title || title || 'Unknown Title';
+  }
+
+  // 2. Resolve Artist (checking author, channelTitle, artists array, or csvFallback)
+  let artist = '';
+  if (safeTrack.artist && safeTrack.artist !== 'Unknown Artist') {
+    artist = safeTrack.artist;
+  } else if (safeTrack.author) {
+    artist = typeof safeTrack.author === 'string' ? safeTrack.author : (safeTrack.author.name || '');
+  } else if (safeTrack.channelTitle) {
+    artist = safeTrack.channelTitle;
+  } else if (Array.isArray(safeTrack.artists) && safeTrack.artists.length > 0) {
+    artist = safeTrack.artists
+      .map((a) => (typeof a === 'string' ? a : (a.name || '')))
+      .filter(Boolean)
+      .join(', ');
+  } else if (safeTrack.artist) {
+    artist = safeTrack.artist;
+  }
+
+  if (!artist || artist === 'Unknown Artist') {
+    artist = safeFallback.artist || 'Unknown Artist';
+  }
+
+  // 3. Resolve Album
+  const album = safeTrack.album || safeFallback.album || '';
+
+  // 4. Resolve Duration
+  const rawDuration =
+    (safeTrack.duration !== undefined && safeTrack.duration !== null && safeTrack.duration !== '')
+      ? safeTrack.duration
+      : safeTrack.durationText ||
+        safeTrack.lengthSeconds ||
+        safeTrack.durationMs ||
+        safeFallback.durationMs ||
+        safeFallback.duration;
+
+  const formattedDuration = formatDuration(rawDuration) || (safeTrack.seconds ? formatDuration(safeTrack.seconds) : '3:30');
+  const seconds =
+    parseDurationSeconds(rawDuration) ||
+    parseDurationSeconds(safeTrack.seconds) ||
+    parseDurationSeconds(formattedDuration) ||
+    210;
+
+  // 5. Video ID / Unique ID
+  const videoId = safeTrack.videoId || safeTrack.id || safeFallback.videoId || safeFallback.id || '';
+
+  // 6. Cover Art
+  const cover =
+    safeTrack.cover ||
+    safeTrack.thumbnailUrl ||
+    safeTrack.thumbnail_url ||
+    safeTrack.albumArt ||
+    safeFallback.artworkUrl ||
+    safeFallback.cover ||
+    'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop';
+
+  // 7. Added Timestamp
+  const addedAt =
+    safeTrack.addedAt !== undefined && safeTrack.addedAt !== null
+      ? Number(safeTrack.addedAt)
+      : safeFallback.addedAt !== undefined && safeFallback.addedAt !== null
+      ? Number(safeFallback.addedAt)
+      : Date.now();
+
+  return {
+    ...safeTrack,
+    id: videoId,
+    videoId,
+    title,
+    artist,
+    album,
+    cover,
+    thumbnailUrl: cover,
+    duration: formattedDuration,
+    durationFormatted: formattedDuration,
+    seconds,
+    addedAt,
+  };
+}
+
+/**
+ * Deterministically sorts playlist tracks by user selected order.
+ * @param {Array} tracks
+ * @param {'custom'|'date_desc'|'date_asc'|'title_asc'|'artist_asc'|'duration_asc'} sortKey
+ * @returns {Array}
+ */
+export function sortPlaylistTracks(tracks, sortKey = 'custom') {
+  if (!Array.isArray(tracks) || tracks.length <= 1) {
+    return Array.isArray(tracks) ? [...tracks] : [];
+  }
+
+  const indexed = tracks.map((t, idx) => ({ track: t, originalIndex: idx }));
+
+  switch (sortKey) {
+    case 'date_desc':
+      indexed.sort((a, b) => {
+        const timeA = typeof a.track.addedAt === 'number' ? a.track.addedAt : a.originalIndex;
+        const timeB = typeof b.track.addedAt === 'number' ? b.track.addedAt : b.originalIndex;
+        if (timeB !== timeA) return timeB - timeA;
+        return b.originalIndex - a.originalIndex;
+      });
+      break;
+
+    case 'date_asc':
+      indexed.sort((a, b) => {
+        const timeA = typeof a.track.addedAt === 'number' ? a.track.addedAt : a.originalIndex;
+        const timeB = typeof b.track.addedAt === 'number' ? b.track.addedAt : b.originalIndex;
+        if (timeA !== timeB) return timeA - timeB;
+        return a.originalIndex - b.originalIndex;
+      });
+      break;
+
+    case 'title_asc':
+      indexed.sort((a, b) => {
+        const titleA = (a.track.title || '').trim();
+        const titleB = (b.track.title || '').trim();
+        const cmp = titleA.localeCompare(titleB, undefined, { sensitivity: 'base' });
+        if (cmp !== 0) return cmp;
+        return a.originalIndex - b.originalIndex;
+      });
+      break;
+
+    case 'artist_asc':
+      indexed.sort((a, b) => {
+        const artistA = (a.track.artist || '').trim();
+        const artistB = (b.track.artist || '').trim();
+        const cmp = artistA.localeCompare(artistB, undefined, { sensitivity: 'base' });
+        if (cmp !== 0) return cmp;
+        const titleCmp = (a.track.title || '').localeCompare(b.track.title || '', undefined, { sensitivity: 'base' });
+        if (titleCmp !== 0) return titleCmp;
+        return a.originalIndex - b.originalIndex;
+      });
+      break;
+
+    case 'duration_asc':
+      indexed.sort((a, b) => {
+        const durA = parseDurationSeconds(a.track.duration || a.track.seconds || a.track.durationMs);
+        const durB = parseDurationSeconds(b.track.duration || b.track.seconds || b.track.durationMs);
+        if (durA !== durB) return durA - durB;
+        return a.originalIndex - b.originalIndex;
+      });
+      break;
+
+    case 'custom':
+    default:
+      return [...tracks];
+  }
+
+  return indexed.map((item) => item.track);
+}
+
 export default parseCsvPlaylist;
