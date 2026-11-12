@@ -23,6 +23,12 @@
   --text-primary: #F4F4F2;
   --text-muted: #8A8A8E;
   --accent-green: #1ED760;
+
+  /* Safe Area Insets (iOS notch/island & Android 15 edge-to-edge system bars) */
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-inset-left: env(safe-area-inset-left, 0px);
+  --safe-area-inset-right: env(safe-area-inset-right, 0px);
 }
 
 @layer base {

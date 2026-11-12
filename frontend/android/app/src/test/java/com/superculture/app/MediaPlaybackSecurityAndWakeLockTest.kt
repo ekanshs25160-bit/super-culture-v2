@@ -56,4 +56,36 @@ class MediaPlaybackSecurityAndWakeLockTest {
             content.contains("android:fullBackupContent=\"false\"")
         )
     }
+
+    @Test
+    fun `verifies MainActivity applies WindowInsetsListener for edge-to-edge safe area`() {
+        val mainActivityFile = File("src/main/java/com/superculture/app/MainActivity.java")
+        assertTrue("MainActivity.java should exist", mainActivityFile.exists())
+        val content = mainActivityFile.readText()
+
+        assertTrue(
+            "MainActivity must use ViewCompat.setOnApplyWindowInsetsListener",
+            content.contains("ViewCompat.setOnApplyWindowInsetsListener")
+        )
+        assertTrue(
+            "MainActivity must query systemBars or displayCutout",
+            content.contains("WindowInsetsCompat.Type.systemBars()") || content.contains("displayCutout()")
+        )
+    }
+
+    @Test
+    fun `verifies styles xml defines status and navigation bar colors`() {
+        val stylesFile = File("src/main/res/values/styles.xml")
+        assertTrue("styles.xml should exist", stylesFile.exists())
+        val content = stylesFile.readText()
+
+        assertTrue(
+            "styles.xml should configure statusBarColor",
+            content.contains("android:statusBarColor")
+        )
+        assertTrue(
+            "styles.xml should configure navigationBarColor",
+            content.contains("android:navigationBarColor")
+        )
+    }
 }

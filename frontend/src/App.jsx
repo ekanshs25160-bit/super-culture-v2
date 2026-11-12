@@ -85,7 +85,14 @@ function AppLayout() {
           />
 
           {/* Drawer Panel */}
-          <div className="relative w-[85vw] max-w-[340px] h-full bg-[#0B0B0C]/95 border-r border-white/10 p-4 overflow-hidden flex flex-col gap-3 shadow-2xl z-10 animate-in slide-in-from-left duration-300">
+          <div
+            style={{
+              paddingTop: 'max(1rem, env(safe-area-inset-top, 0px))',
+              paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+              paddingLeft: 'max(1rem, env(safe-area-inset-left, 0px))',
+            }}
+            className="relative w-[85vw] max-w-[340px] h-full bg-[#0B0B0C]/95 border-r border-white/10 p-4 overflow-hidden flex flex-col gap-3 shadow-2xl z-10 animate-in slide-in-from-left duration-300"
+          >
             {/* Drawer Header with Close Button */}
             <div className="flex items-center justify-between pb-2 border-b border-white/10 shrink-0">
               <span className="meta-label text-[10px] text-[#1ED760]">NAVIGATION & ACTIVITY</span>
