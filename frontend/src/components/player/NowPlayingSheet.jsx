@@ -112,21 +112,21 @@ export default function NowPlayingSheet({
         {/* Swipe drag indicator bar */}
         <div className="w-12 h-1.5 rounded-full bg-white/20 mb-3" />
 
-        <div className="w-full flex items-center justify-between px-2">
+        <div className="w-full flex items-center justify-between px-1 sm:px-2">
           <button
             onClick={handleClose}
             aria-label="Close now playing sheet"
-            className="min-w-[44px] min-h-[44px] rounded-full bg-white/5 hover:bg-white/10 active:scale-95 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer"
+            className="min-w-[40px] sm:min-w-[44px] min-h-[40px] sm:min-h-[44px] shrink-0 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 flex items-center justify-center text-[#F4F4F2] transition cursor-pointer"
           >
             <ChevronDown className="w-6 h-6" />
           </button>
 
-          <div className="text-center min-w-0 px-2">
+          <div className="text-center min-w-0 flex-1 px-1 sm:px-2">
             <span className="meta-label text-[10px] text-[#1ED760] tracking-widest flex items-center justify-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-[#1ED760] animate-pulse" />
               NOW PLAYING
             </span>
-            <p className="text-xs text-[#8A8A8E] truncate max-w-[200px]">
+            <p className="text-xs text-[#8A8A8E] truncate max-w-[200px] mx-auto">
               {showQueue ? 'Upcoming Queue' : (currentTrack.artist || 'Super Culture')}
             </p>
           </div>
@@ -134,7 +134,7 @@ export default function NowPlayingSheet({
           <button
             onClick={() => setShowQueue((prev) => !prev)}
             aria-label={showQueue ? 'Show album artwork' : 'Show track queue'}
-            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer ${
+            className={`min-w-[40px] sm:min-w-[44px] min-h-[40px] sm:min-h-[44px] shrink-0 rounded-full flex items-center justify-center transition cursor-pointer ${
               showQueue
                 ? 'bg-[#1ED760] text-[#0B0B0C] font-semibold'
                 : 'bg-white/5 hover:bg-white/10 text-[#F4F4F2]'
@@ -201,7 +201,7 @@ export default function NowPlayingSheet({
         ) : (
           <div className="w-full flex flex-col items-center justify-center">
             {/* Artwork Container */}
-            <div className="w-64 h-64 sm:w-72 sm:h-72 aspect-square rounded-3xl overflow-hidden border border-white/15 shadow-2xl relative mb-6">
+            <div className="w-56 h-56 sm:w-64 sm:h-64 md:w-72 md:h-72 max-w-[72vw] max-h-[38vh] aspect-square rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 shadow-2xl relative mb-4 sm:mb-6 shrink-0">
               <CoverImage
                 src={currentTrack.cover}
                 alt={currentTrack.title}
@@ -211,35 +211,35 @@ export default function NowPlayingSheet({
             </div>
 
             {/* Track Info & Like Action */}
-            <div className="w-full flex items-center justify-between gap-3 mb-2 px-2">
-              <div className="min-w-0 flex-1">
-                <h2 className="text-lg sm:text-xl font-bold text-[#F4F4F2] truncate select-text">
+            <div className="w-full flex items-center justify-between gap-2 sm:gap-3 mb-2 px-1 sm:px-2">
+              <div className="min-w-0 flex-1 pr-1">
+                <h2 className="text-base sm:text-lg md:text-xl font-bold text-[#F4F4F2] truncate select-text">
                   {currentTrack.title}
                 </h2>
-                <p className="text-sm text-[#8A8A8E] truncate select-text mt-0.5">
+                <p className="text-xs sm:text-sm text-[#8A8A8E] truncate select-text mt-0.5">
                   {currentTrack.artist}
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <button
                   onClick={onToggleLike}
                   aria-label={isLiked ? 'Remove from Liked Songs' : 'Save to Liked Songs'}
-                  className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
+                  className={`min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] shrink-0 rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
                     isLiked
                       ? 'bg-[#1ED760]/20 text-[#1ED760] border border-[#1ED760]/40'
                       : 'bg-white/5 text-[#8A8A8E] hover:text-white border border-white/10'
                   }`}
                 >
-                  <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
+                  <Heart className={`w-4 h-4 sm:w-5 sm:h-5 ${isLiked ? 'fill-current' : ''}`} />
                 </button>
 
                 <button
                   onClick={onAddToPlaylist}
                   aria-label="Add track to playlist"
-                  className="min-w-[44px] min-h-[44px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-[#8A8A8E] hover:text-white transition cursor-pointer active:scale-95"
+                  className="min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] shrink-0 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-[#8A8A8E] hover:text-white transition cursor-pointer active:scale-95"
                 >
-                  <Plus className="w-5 h-5" />
+                  <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
               </div>
             </div>
@@ -270,12 +270,12 @@ export default function NowPlayingSheet({
         </div>
 
         {/* Primary Controls Row: Shuffle, Prev, Play/Pause, Next, Repeat */}
-        <div className="flex items-center justify-between w-full mt-2">
+        <div className="flex items-center justify-between w-full mt-1.5 sm:mt-2 gap-1 sm:gap-2">
           {/* Shuffle */}
           <button
             onClick={onToggleShuffle}
             aria-label="Toggle shuffle"
-            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
+            className={`min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] shrink-0 rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
               isShuffle
                 ? 'text-[#1ED760]'
                 : 'text-[#8A8A8E] hover:text-white'
@@ -288,9 +288,9 @@ export default function NowPlayingSheet({
           <button
             onClick={onSkipPrev}
             aria-label="Previous track"
-            className="min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center transition text-[#F4F4F2] hover:scale-105 active:scale-95 cursor-pointer"
+            className="min-w-[40px] sm:min-w-[48px] min-h-[40px] sm:min-h-[48px] shrink-0 rounded-full flex items-center justify-center transition text-[#F4F4F2] hover:scale-105 active:scale-95 cursor-pointer"
           >
-            <SkipBack className="w-6 h-6 fill-current" />
+            <SkipBack className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
           </button>
 
           {/* Master Play / Pause */}
@@ -298,7 +298,7 @@ export default function NowPlayingSheet({
             <button
               onClick={onTogglePlay}
               aria-label="Tap to play audio stream"
-              className="min-h-[48px] px-5 rounded-full bg-[#1ED760] text-[#0B0B0C] text-xs font-bold flex items-center gap-2 shadow-xl shadow-[#1ED760]/30 transition animate-pulse active:scale-95 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[48px] px-4 sm:px-5 shrink-0 rounded-full bg-[#1ED760] text-[#0B0B0C] text-xs font-bold flex items-center gap-2 shadow-xl shadow-[#1ED760]/30 transition animate-pulse active:scale-95 cursor-pointer"
             >
               <Play className="w-4 h-4 fill-current" />
               <span>TAP TO PLAY</span>
@@ -307,12 +307,12 @@ export default function NowPlayingSheet({
             <button
               onClick={onTogglePlay}
               aria-label={isPlaying ? 'Pause' : 'Play'}
-              className="w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition bg-[#F4F4F2] text-[#0B0B0C] hover:scale-105 active:scale-95 cursor-pointer"
+              className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-full flex items-center justify-center shadow-2xl transition bg-[#F4F4F2] text-[#0B0B0C] hover:scale-105 active:scale-95 cursor-pointer"
             >
               {isPlaying ? (
-                <Pause className="w-7 h-7 fill-current" />
+                <Pause className="w-6 h-6 sm:w-7 sm:h-7 fill-current" />
               ) : (
-                <Play className="w-7 h-7 fill-current ml-0.5" />
+                <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-current ml-0.5" />
               )}
             </button>
           )}
@@ -321,9 +321,9 @@ export default function NowPlayingSheet({
           <button
             onClick={onSkipNext}
             aria-label="Next track"
-            className="min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center transition text-[#F4F4F2] hover:scale-105 active:scale-95 cursor-pointer"
+            className="min-w-[40px] sm:min-w-[48px] min-h-[40px] sm:min-h-[48px] shrink-0 rounded-full flex items-center justify-center transition text-[#F4F4F2] hover:scale-105 active:scale-95 cursor-pointer"
           >
-            <SkipForward className="w-6 h-6 fill-current" />
+            <SkipForward className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
           </button>
 
           {/* Repeat */}
@@ -343,7 +343,7 @@ export default function NowPlayingSheet({
                 ? 'Repeat: All Tracks'
                 : 'Repeat: Off'
             }
-            className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 relative ${
+            className={`min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] shrink-0 rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 relative ${
               isRepeat || repeatMode !== 'off'
                 ? 'text-[#1ED760]'
                 : 'text-[#8A8A8E] hover:text-white'

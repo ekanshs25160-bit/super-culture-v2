@@ -2,6 +2,10 @@
  * Helper utilities for playlist track normalization and local storage persistence.
  */
 
+import { normalizeTrackMetadata, formatDuration, parseDurationSeconds } from '../utils/csvPlaylistParser.js';
+
+export { normalizeTrackMetadata, formatDuration, parseDurationSeconds };
+
 export const MOODS_LIST = [
   { index: 0, name: 'Energetic' },
   { index: 1, name: 'Chill' },
@@ -9,29 +13,22 @@ export const MOODS_LIST = [
   { index: 3, name: 'Focused' },
 ];
 
-export function normalizeTrack(track) {
+export function normalizeTrack(track, csvFallback = {}) {
   if (!track) return null;
-  const videoId = track.videoId || track.id;
-  return {
-    id: videoId,
-    videoId,
-    title: track.title || 'Untitled Track',
-    artist: track.artist || 'Unknown Artist',
-    cover:
-      track.cover ||
-      track.albumArt ||
-      track.thumbnailUrl ||
-      track.thumbnail_url ||
-      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop',
-    duration: track.durationFormatted || track.duration || '3:30',
-    seconds: typeof track.seconds === 'number' ? track.seconds : (typeof track.duration === 'number' ? track.duration : 210),
-  };
+  return normalizeTrackMetadata(track, csvFallback);
 }
 
 export function loadSavedTracks(playlistId) {
   try {
     const raw = localStorage.getItem(`superculture_playlist_tracks_${playlistId}`);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((t, idx) =>
+      normalizeTrackMetadata(t, {
+        addedAt: t.addedAt !== undefined ? t.addedAt : (1000000 + idx),
+      })
+    );
   } catch {
     return [];
   }

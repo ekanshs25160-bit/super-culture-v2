@@ -18,23 +18,23 @@ export default function PlayerTray({
   return (
     <div
       ref={trayRef}
-      className="absolute bottom-full right-5 mb-2 p-3 rounded-2xl bg-[#121215]/95 backdrop-blur-xl border border-white/10 shadow-2xl flex items-center gap-3.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150"
+      className="absolute bottom-full right-2 sm:right-5 mb-2 p-2.5 sm:p-3 rounded-2xl bg-[#121215]/95 backdrop-blur-xl border border-white/10 shadow-2xl flex items-center gap-2 sm:gap-3.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 max-w-[95vw]"
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <Volume2 className="w-4 h-4 text-[#8A8A8E] shrink-0" />
         <div
           onClick={onVolumeClick}
           aria-label="Adjust audio volume"
-          className="sc-oled-track w-20 h-2 rounded-full p-[2px] overflow-hidden cursor-pointer flex items-center"
+          className="sc-oled-track w-16 sm:w-20 h-2 rounded-full p-[2px] overflow-hidden cursor-pointer flex items-center"
         >
           <div className="h-full bg-[#F4F4F2] rounded-full transition-all" style={{ width: `${volumePct}%` }} />
         </div>
       </div>
-      <div className="h-4 w-px bg-white/10" />
+      <div className="h-4 w-px bg-white/10 shrink-0" />
       <button
         onClick={onToggleShuffle}
         aria-label="Toggle shuffle"
-        className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer ${isShuffle ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
+        className={`shrink-0 min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer ${isShuffle ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
       >
         <Shuffle className="w-4 h-4" />
       </button>
@@ -54,7 +54,7 @@ export default function PlayerTray({
             ? 'Repeat: All Tracks'
             : 'Repeat: Off'
         }
-        className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer relative ${isRepeat || repeatMode !== 'off' ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
+        className={`shrink-0 min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer relative ${isRepeat || repeatMode !== 'off' ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
       >
         <Repeat className="w-4 h-4" />
         {repeatMode === 'one' && (
@@ -66,7 +66,7 @@ export default function PlayerTray({
       <button
         onClick={onAddToPlaylist}
         aria-label="Add track to playlist"
-        className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-white transition cursor-pointer"
+        className="shrink-0 min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-white transition cursor-pointer"
       >
         <Plus className="w-4 h-4" />
       </button>

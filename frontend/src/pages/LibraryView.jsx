@@ -128,11 +128,11 @@ export default function LibraryView() {
         meta="PERSONAL VAULT"
         subtitle="Manage your saved music, curated archives, and personalized playlists."
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setIsCsvModalOpen(true)}
             aria-label="Import playlist from CSV file"
-            className="sc-pill px-3.5 py-1.5 bg-white/10 hover:bg-white/15 text-[#F4F4F2] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer border border-white/10"
+            className="sc-pill min-h-[36px] px-3.5 py-1.5 bg-white/10 hover:bg-white/15 text-[#F4F4F2] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer border border-white/10 shrink-0"
           >
             <Upload className="w-3.5 h-3.5 text-[#1ED760]" aria-hidden="true" />
             <span>Import CSV</span>
@@ -140,7 +140,7 @@ export default function LibraryView() {
           <button
             onClick={handleOpenImport}
             aria-label="Import playlist from text"
-            className="sc-pill px-3.5 py-1.5 bg-white/10 hover:bg-white/15 text-[#F4F4F2] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer border border-white/10"
+            className="sc-pill min-h-[36px] px-3.5 py-1.5 bg-white/10 hover:bg-white/15 text-[#F4F4F2] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer border border-white/10 shrink-0"
           >
             <FileText className="w-3.5 h-3.5 text-[#1ED760]" aria-hidden="true" />
             <span>Import Playlist</span>
@@ -148,7 +148,7 @@ export default function LibraryView() {
           <button
             onClick={handleCreateNew}
             aria-label="Create new playlist"
-            className="sc-pill px-3.5 py-1.5 bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+            className="sc-pill min-h-[36px] px-3.5 py-1.5 bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer shrink-0"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             <span>New Playlist</span>

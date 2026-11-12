@@ -4,6 +4,7 @@ import { Play, Pause, Heart, Plus, Trash2, ArrowDown, Check, Loader2 } from 'luc
 import { useAudio } from '../../hooks/useAudio';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { useUiStore } from '../../store/useUiStore';
+import { formatDuration } from '../../utils/csvPlaylistParser';
 import CoverImage from './CoverImage';
 
 /**
@@ -99,10 +100,10 @@ export default function TrackRow({
 
   const durationStr =
     track.durationFormatted ||
-    track.duration ||
-    (typeof track.seconds === 'number'
-      ? `${Math.floor(track.seconds / 60)}:${track.seconds % 60 < 10 ? '0' : ''}${track.seconds % 60}`
-      : '3:30');
+    formatDuration(track.duration) ||
+    formatDuration(track.seconds) ||
+    formatDuration(track.durationMs) ||
+    '3:30';
 
   const formattedIndex = typeof index === 'number' ? String(index + 1).padStart(2, '0') : null;
 
@@ -117,15 +118,15 @@ export default function TrackRow({
           handleRowClick();
         }
       }}
-      aria-label={`Play ${track.title} by ${track.artist}`}
+      aria-label={`Play ${track.title} by ${track.artist || 'Unknown Artist'}`}
       className={`group sc-card sc-card-hover p-2.5 flex items-center justify-between rounded-2xl cursor-pointer transition select-none ${
         isCurrent ? 'ring-1 ring-[#1ED760]/80 bg-white/[0.09] shadow-[0_0_16px_rgba(30,215,96,0.14)]' : 'hover:bg-white/[0.05]'
       }`}
     >
       {/* Left: Index / Equalizer + 48px Cover + Title + Artist */}
-      <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 pr-2">
         {showIndex && (
-          <div className="w-6 shrink-0 flex items-center justify-center font-mono text-[11px] text-[#8A8A8E]">
+          <div className="w-5 sm:w-6 shrink-0 flex items-center justify-center font-mono text-[11px] text-[#8A8A8E]">
             {isCurrentPlaying ? (
               <div className="flex items-end gap-[2px] h-3.5">
                 <span className="w-[2px] bg-[#1ED760] rounded-full eq-bar-1 motion-reduce:animate-none"></span>
@@ -144,8 +145,8 @@ export default function TrackRow({
           </div>
         )}
 
-        {/* 48px Thumbnail Cover */}
-        <div className="relative w-12 h-12 shrink-0 rounded-xl overflow-hidden border border-white/10 bg-black/40">
+        {/* Thumbnail Cover: 44px on mobile, 48px on sm+ */}
+        <div className="relative w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-xl overflow-hidden border border-white/10 bg-black/40">
           <CoverImage
             src={coverUrl}
             alt=""
@@ -156,15 +157,15 @@ export default function TrackRow({
         </div>
 
         {/* Metadata: 2-line wrapped full title + clickable artist name */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 pr-1 sm:pr-2">
           <p
-            className={`text-xs sm:text-sm font-medium line-clamp-2 leading-snug break-words transition ${
+            className={`text-sm sm:text-base font-medium leading-snug line-clamp-2 sm:truncate break-words transition ${
               isCurrent ? 'text-[#1ED760]' : 'text-[#F4F4F2] group-hover:text-white'
             }`}
           >
             {track.title}
           </p>
-          <div className="flex items-center gap-1.5 text-xs text-[#8A8A8E] truncate mt-0.5">
+          <div className="flex items-center gap-1.5 text-xs text-zinc-400 truncate mt-0.5">
             <span
               onClick={handleArtistClick}
               role="link"
@@ -172,14 +173,20 @@ export default function TrackRow({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleArtistClick(e);
               }}
-              aria-label={`View artist ${track.artist}`}
+              aria-label={`View artist ${track.artist || 'Unknown Artist'}`}
               className="truncate hover:underline hover:text-[#1ED760] transition cursor-pointer"
             >
-              {track.artist}
+              {track.artist || 'Unknown Artist'}
             </span>
+            {track.album && (
+              <>
+                <span className="text-zinc-600 shrink-0">•</span>
+                <span className="truncate text-zinc-500">{track.album}</span>
+              </>
+            )}
             {track.reason && (
               <>
-                <span>•</span>
+                <span className="shrink-0">•</span>
                 <span className="text-[10px] text-[#1ED760]/85 font-mono truncate">{track.reason}</span>
               </>
             )}
@@ -188,8 +195,8 @@ export default function TrackRow({
       </div>
 
       {/* Right: Duration + Like + Add + Optional Remove + Play Button */}
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="text-[11px] font-mono text-[#8A8A8E] w-10 text-right">
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        <span className="text-xs text-zinc-400 tabular-nums font-mono shrink-0">
           {durationStr}
         </span>
 
@@ -197,10 +204,10 @@ export default function TrackRow({
           <button
             onClick={handleLikeClick}
             aria-label={isLiked ? `Remove ${track.title} from liked songs` : `Save ${track.title} to liked songs`}
-            className={`w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer ${
+            className={`shrink-0 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center transition cursor-pointer ${
               isLiked
                 ? 'text-[#1ED760] bg-[#1ED760]/15 border border-[#1ED760]/30 shadow-sm'
-                : 'text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100'
+                : 'text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100'
             }`}
           >
             <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}`} aria-hidden="true" />
@@ -211,7 +218,7 @@ export default function TrackRow({
           <button
             onClick={handleAddClick}
             aria-label={`Add ${track.title} to playlist`}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
+            className="shrink-0 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
@@ -228,12 +235,12 @@ export default function TrackRow({
                 ? `Remove ${track.title} from offline downloads`
                 : `Download ${track.title} for offline playback`
             }
-            className={`w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer ${
+            className={`shrink-0 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center transition cursor-pointer ${
               isDownloading
                 ? 'text-[#1ED760] bg-[#1ED760]/10 border border-[#1ED760]/30'
                 : isDownloaded
                 ? 'text-[#1ED760] bg-[#1ED760]/15 border border-[#1ED760]/30 shadow-sm'
-                : 'text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100'
+                : 'text-[#8A8A8E] hover:text-white hover:bg-white/10 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100'
             }`}
           >
             {isDownloading ? (
@@ -253,7 +260,7 @@ export default function TrackRow({
               onRemove(track);
             }}
             aria-label={`Remove ${track.title} from playlist`}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-red-400 hover:bg-white/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
+            className="shrink-0 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center text-[#8A8A8E] hover:text-red-400 hover:bg-white/10 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
@@ -266,7 +273,7 @@ export default function TrackRow({
             handleRowClick();
           }}
           aria-label={isCurrentPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
-          className={`w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
+          className={`shrink-0 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center transition cursor-pointer ${
             isCurrentPlaying
               ? 'bg-[#1ED760] text-black shadow-md'
               : 'bg-white/5 hover:bg-[#1ED760] hover:text-black text-[#F4F4F2]'

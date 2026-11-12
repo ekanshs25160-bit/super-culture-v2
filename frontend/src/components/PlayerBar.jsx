@@ -222,14 +222,14 @@ export default function PlayerBar() {
 
             {/* Mini Player Right Actions: Like + Master Play/Pause */}
             <div
-              className="flex items-center gap-1.5 shrink-0"
+              className="flex items-center gap-1 sm:gap-2 shrink-0"
               onClick={(e) => e.stopPropagation()}
             >
               {currentTrack && (
                 <button
                   onClick={handleLikeClick}
                   aria-label={isLiked ? 'Remove from Liked Songs' : 'Save to Liked Songs'}
-                  className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
+                  className={`min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] shrink-0 rounded-full flex items-center justify-center transition cursor-pointer active:scale-95 ${
                     isLiked ? 'text-[#1ED760]' : 'text-[#8A8A8E] hover:text-white'
                   }`}
                 >
@@ -241,7 +241,7 @@ export default function PlayerBar() {
                 <button
                   onClick={handleMasterPlay}
                   aria-label="Tap to play audio stream"
-                  className="min-h-[44px] px-3.5 rounded-full bg-[#1ED760] text-[#0B0B0C] text-[11px] font-bold flex items-center gap-1.5 shadow-md shadow-[#1ED760]/30 transition animate-pulse active:scale-95 cursor-pointer"
+                  className="min-h-[36px] sm:min-h-[44px] px-3 sm:px-3.5 rounded-full bg-[#1ED760] text-[#0B0B0C] text-[11px] font-bold flex items-center gap-1.5 shadow-md shadow-[#1ED760]/30 transition animate-pulse active:scale-95 cursor-pointer shrink-0"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
                   <span>PLAY</span>
@@ -250,7 +250,7 @@ export default function PlayerBar() {
                 <button
                   onClick={handleMasterPlay}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
-                  className="min-w-[44px] min-h-[44px] rounded-full bg-[#F4F4F2] text-[#0B0B0C] flex items-center justify-center shadow-md transition active:scale-95 cursor-pointer"
+                  className="min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] shrink-0 rounded-full bg-[#F4F4F2] text-[#0B0B0C] flex items-center justify-center shadow-md transition active:scale-95 cursor-pointer"
                 >
                   {isPlaying ? (
                     <Pause className="w-4 h-4 fill-current" />
