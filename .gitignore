@@ -157,3 +157,5 @@ GoogleService-Info.plist
 .turbo/
 tmp/
 temp/
+
+tools/
