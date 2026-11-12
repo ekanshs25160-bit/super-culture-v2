@@ -2,6 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseRawCsv,
+  detectDelimiter,
+  cleanSearchTitle,
+  getPrimaryArtist,
   parseDurationMs,
   parseCsvPlaylist,
   formatDuration,
@@ -28,6 +31,53 @@ describe('CSV Playlist Parser Suite', () => {
     assert.equal(tracks.length, 1);
     assert.equal(tracks[0].title, 'Blinding Lights');
     assert.equal(tracks[0].artist, 'The Weeknd');
+  });
+
+  it('detects comma, semicolon, and tab delimiters accurately', () => {
+    assert.equal(detectDelimiter('Track,Artist,Album\nSong,Artist,Album'), ',');
+    assert.equal(detectDelimiter('Track;Artist;Album\n"Song, Title";Artist;Album'), ';');
+    assert.equal(detectDelimiter('Track\tArtist\tAlbum\nSong\tArtist\tAlbum'), '\t');
+  });
+
+  it('parses semicolon-delimited CSV files accurately', () => {
+    const semicolonCsv = `Title;Artist;Album;Duration\n"Hotel California";"Eagles";"Hotel California";"6:30"\n"Take It Easy";"Eagles";"Eagles";"3:31"`;
+    const { tracks, errors } = parseCsvPlaylist(semicolonCsv);
+
+    assert.equal(errors.length, 0);
+    assert.equal(tracks.length, 2);
+    assert.equal(tracks[0].title, 'Hotel California');
+    assert.equal(tracks[0].artist, 'Eagles');
+    assert.equal(tracks[0].durationMs, 390000);
+    assert.equal(tracks[1].title, 'Take It Easy');
+  });
+
+  it('parses tab-delimited TSV files accurately', () => {
+    const tsv = `Track Name\tArtist Name\tDuration\n"Bohemian Rhapsody"\t"Queen"\t"5:55"`;
+    const { tracks, errors } = parseCsvPlaylist(tsv);
+
+    assert.equal(errors.length, 0);
+    assert.equal(tracks.length, 1);
+    assert.equal(tracks[0].title, 'Bohemian Rhapsody');
+    assert.equal(tracks[0].artist, 'Queen');
+    assert.equal(tracks[0].durationMs, 355000);
+  });
+
+  it('cleanSearchTitle removes remaster, live, and feat noise for robust YouTube search queries', () => {
+    assert.equal(cleanSearchTitle('Bohemian Rhapsody - Remastered 2011'), 'Bohemian Rhapsody');
+    assert.equal(cleanSearchTitle('Hotel California - 2013 Remaster'), 'Hotel California');
+    assert.equal(cleanSearchTitle('Smells Like Teen Spirit (Remastered)'), 'Smells Like Teen Spirit');
+    assert.equal(cleanSearchTitle('Blinding Lights (feat. Rosalía)'), 'Blinding Lights');
+    assert.equal(cleanSearchTitle('Comfortably Numb - Live at Pulse 1994'), 'Comfortably Numb');
+    assert.equal(cleanSearchTitle('Get Lucky (Radio Edit)'), 'Get Lucky');
+    assert.equal(cleanSearchTitle('Yesterday'), 'Yesterday');
+  });
+
+  it('getPrimaryArtist extracts primary artist for search query matching', () => {
+    assert.equal(getPrimaryArtist('The Weeknd, Daft Punk'), 'The Weeknd');
+    assert.equal(getPrimaryArtist('Drake feat. Wizkid & Kyla'), 'Drake');
+    assert.equal(getPrimaryArtist('Dua Lipa / Elton John'), 'Dua Lipa');
+    assert.equal(getPrimaryArtist('Coldplay & BTS'), 'Coldplay');
+    assert.equal(getPrimaryArtist('Queen'), 'Queen');
   });
 
   it('correctly auto-detects Spotify / Exportify CSV headers', () => {

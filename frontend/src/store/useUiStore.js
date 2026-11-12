@@ -10,6 +10,7 @@ export const useUiStore = create((set) => ({
   isAiDjLive: false,
   addToPlaylistTrack: null,
   isMobileMenuOpen: false,
+  isCsvImportOpen: false,
 
   // Mobile / Background Engine Preferences: 'Auto' | 'Audio stream' | 'YouTube player'
   playbackEngine: (typeof localStorage !== 'undefined' && localStorage.getItem(ENGINE_STORAGE_KEY)) || 'Auto',
@@ -47,6 +48,9 @@ export const useUiStore = create((set) => ({
 
   openAddToPlaylist: (track) => set({ addToPlaylistTrack: track }),
   closeAddToPlaylist: () => set({ addToPlaylistTrack: null }),
+
+  openCsvImport: () => set({ isCsvImportOpen: true }),
+  closeCsvImport: () => set({ isCsvImportOpen: false }),
 
   setNotificationsOpen: (open) => set({ isNotificationsOpen: open }),
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),

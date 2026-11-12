@@ -4,6 +4,7 @@ import { Play, Shuffle, Heart, Trash2, ArrowUpDown } from 'lucide-react';
 import { PageHeader, TrackRow, CoverStack, EmptyState, ConfirmDialog } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
+import { loadSavedTracks } from '../store/libraryHelpers';
 import { normalizeTrackMetadata, sortPlaylistTracks } from '../utils/csvPlaylistParser';
 
 export default function PlaylistView() {
@@ -63,19 +64,31 @@ export default function PlaylistView() {
       );
     }
     if (customPlaylist) {
-      const list = Array.isArray(customPlaylist.tracks) ? customPlaylist.tracks : [];
+      const list =
+        Array.isArray(customPlaylist.tracks) && customPlaylist.tracks.length > 0
+          ? customPlaylist.tracks
+          : loadSavedTracks(playlistId);
       return list.map((t, idx) =>
         normalizeTrackMetadata(t, {
           addedAt: t.addedAt !== undefined ? t.addedAt : (1000000 + idx),
         })
       );
     }
+    const fallbackList = loadSavedTracks(playlistId);
+    if (fallbackList.length > 0) {
+      return fallbackList.map((t, idx) =>
+        normalizeTrackMetadata(t, {
+          addedAt: t.addedAt !== undefined ? t.addedAt : (1000000 + idx),
+        })
+      );
+    }
     return [];
-  }, [isLikedSongs, likedSongs, customPlaylist]);
+  }, [isLikedSongs, likedSongs, customPlaylist, playlistId]);
 
   const covers = useMemo(() => {
     if (isLikedSongs) return rawTracks.map((t) => t.cover).filter(Boolean);
-    if (customPlaylist) return [customPlaylist.coverUrl].filter(Boolean);
+    if (customPlaylist?.coverUrl) return [customPlaylist.coverUrl];
+    if (rawTracks.length > 0 && rawTracks[0].cover) return [rawTracks[0].cover];
     return [];
   }, [isLikedSongs, rawTracks, customPlaylist]);
 

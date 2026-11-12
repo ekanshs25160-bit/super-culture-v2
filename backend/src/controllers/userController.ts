@@ -25,7 +25,7 @@ export class UserController {
 
       // Liked songs
       const likedSongs = db.prepare(`
-        SELECT video_id as videoId, title, artist, thumbnail_url as thumbnailUrl, duration
+        SELECT video_id as videoId, title, artist, thumbnail_url as thumbnailUrl, duration, created_at as addedAt
         FROM liked_songs
         WHERE user_id = ?
         ORDER BY created_at DESC
@@ -40,6 +40,17 @@ export class UserController {
         WHERE user_id = ?
         ORDER BY updated_at DESC
       `).all(userId) as Playlist[];
+
+      const tracksStmt = db.prepare(`
+        SELECT id, video_id as videoId, title, artist, thumbnail_url as thumbnailUrl, duration, position, added_at as addedAt
+        FROM playlist_tracks
+        WHERE playlist_id = ?
+        ORDER BY position ASC, added_at ASC
+      `);
+
+      for (const p of playlists) {
+        p.tracks = tracksStmt.all(p.id) as TrackMeta[];
+      }
 
       res.json({
         user: {
@@ -145,6 +156,197 @@ export class UserController {
     } catch (error: any) {
       console.error('[UserController] createPlaylist error:', error);
       res.status(500).json({ error: 'Failed to create playlist' });
+    }
+  }
+
+  /**
+   * Add multiple tracks to a playlist in batch (CSV import or bulk operations)
+   * POST /api/library/playlists/:playlistId/tracks/batch
+   */
+  public async addTracksBatch(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req.headers['x-guest-id'] as string) || 'default-user';
+      const { playlistId } = req.params;
+      const { tracks } = req.body;
+
+      if (!playlistId) {
+        res.status(400).json({ error: 'playlistId parameter is required' });
+        return;
+      }
+
+      if (!Array.isArray(tracks) || tracks.length === 0) {
+        res.status(400).json({ error: 'tracks array is required and must not be empty' });
+        return;
+      }
+
+      const db = getDatabase();
+      const playlist = db.prepare('SELECT id FROM playlists WHERE id = ? AND user_id = ?').get(playlistId, userId) as any;
+
+      if (!playlist) {
+        res.status(404).json({ error: 'Playlist not found' });
+        return;
+      }
+
+      const maxPosRow = db.prepare('SELECT MAX(position) as maxPos FROM playlist_tracks WHERE playlist_id = ?').get(playlistId) as any;
+      const startPos = (typeof maxPosRow?.maxPos === 'number' && !isNaN(maxPosRow.maxPos)) ? maxPosRow.maxPos + 1 : 0;
+
+      const insertStmt = db.prepare(`
+        INSERT INTO playlist_tracks (id, playlist_id, video_id, title, artist, thumbnail_url, duration, position, added_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const executeBatch = () => {
+        for (let i = 0; i < tracks.length; i++) {
+          const t = tracks[i];
+          const trackId = uuidv4();
+          const videoId = t.videoId || t.id || `track-${Date.now()}-${i}`;
+          const title = t.title || 'Unknown Title';
+          const artist = t.artist || 'Unknown Artist';
+          const thumbnailUrl = t.cover || t.thumbnailUrl || t.thumbnail_url || '';
+
+          let duration = 0;
+          if (typeof t.duration === 'number') {
+            duration = t.duration;
+          } else if (typeof t.seconds === 'number') {
+            duration = t.seconds;
+          } else if (typeof t.durationMs === 'number') {
+            duration = Math.round(t.durationMs / 1000);
+          } else if (typeof t.duration === 'string') {
+            const parts = t.duration.split(':').map((p: string) => parseInt(p, 10));
+            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+              duration = parts[0] * 60 + parts[1];
+            } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+              duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            }
+          }
+
+          let addedAt: string;
+          if (t.addedAt) {
+            if (typeof t.addedAt === 'number') {
+              addedAt = new Date(t.addedAt).toISOString();
+            } else {
+              addedAt = String(t.addedAt);
+            }
+          } else {
+            addedAt = new Date().toISOString();
+          }
+
+          insertStmt.run(
+            trackId,
+            playlistId,
+            videoId,
+            title,
+            artist,
+            thumbnailUrl,
+            duration,
+            startPos + i,
+            addedAt
+          );
+        }
+
+        db.prepare('UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(playlistId);
+      };
+
+      if (typeof (db as any).transaction === 'function') {
+        (db as any).transaction(executeBatch)();
+      } else {
+        db.exec('BEGIN');
+        try {
+          executeBatch();
+          db.exec('COMMIT');
+        } catch (txErr) {
+          db.exec('ROLLBACK');
+          throw txErr;
+        }
+      }
+
+      res.status(200).json({ ok: true, count: tracks.length });
+    } catch (error: any) {
+      console.error('[UserController] addTracksBatch error:', error);
+      res.status(500).json({ error: 'Failed to batch add tracks to playlist' });
+    }
+  }
+
+  /**
+   * Add a single track to playlist
+   * POST /api/library/playlists/:playlistId/tracks
+   */
+  public async addTrack(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req.headers['x-guest-id'] as string) || 'default-user';
+      const { playlistId } = req.params;
+      const track = req.body.track || req.body;
+
+      if (!playlistId) {
+        res.status(400).json({ error: 'playlistId parameter is required' });
+        return;
+      }
+
+      const videoId = track.videoId || track.id;
+      if (!videoId) {
+        res.status(400).json({ error: 'videoId is required' });
+        return;
+      }
+
+      const db = getDatabase();
+      const playlist = db.prepare('SELECT id FROM playlists WHERE id = ? AND user_id = ?').get(playlistId, userId) as any;
+
+      if (!playlist) {
+        res.status(404).json({ error: 'Playlist not found' });
+        return;
+      }
+
+      const existing = db.prepare('SELECT id FROM playlist_tracks WHERE playlist_id = ? AND video_id = ?').get(playlistId, videoId) as any;
+      if (existing) {
+        res.status(409).json({ error: 'Track already exists in playlist' });
+        return;
+      }
+
+      const maxPosRow = db.prepare('SELECT MAX(position) as maxPos FROM playlist_tracks WHERE playlist_id = ?').get(playlistId) as any;
+      const nextPos = (typeof maxPosRow?.maxPos === 'number' && !isNaN(maxPosRow.maxPos)) ? maxPosRow.maxPos + 1 : 0;
+
+      const trackId = uuidv4();
+      const title = track.title || 'Unknown Title';
+      const artist = track.artist || 'Unknown Artist';
+      const thumbnailUrl = track.cover || track.thumbnailUrl || track.thumbnail_url || '';
+      const duration = typeof track.duration === 'number' ? track.duration : (track.seconds || 210);
+      const addedAt = track.addedAt
+        ? (typeof track.addedAt === 'number' ? new Date(track.addedAt).toISOString() : String(track.addedAt))
+        : new Date().toISOString();
+
+      db.prepare(`
+        INSERT INTO playlist_tracks (id, playlist_id, video_id, title, artist, thumbnail_url, duration, position, added_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        trackId,
+        playlistId,
+        videoId,
+        title,
+        artist,
+        thumbnailUrl,
+        duration,
+        nextPos,
+        addedAt
+      );
+
+      db.prepare('UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(playlistId);
+
+      res.status(201).json({
+        ok: true,
+        track: {
+          id: trackId,
+          videoId,
+          title,
+          artist,
+          thumbnailUrl,
+          duration,
+          position: nextPos,
+          addedAt,
+        },
+      });
+    } catch (error: any) {
+      console.error('[UserController] addTrack error:', error);
+      res.status(500).json({ error: 'Failed to add track to playlist' });
     }
   }
 

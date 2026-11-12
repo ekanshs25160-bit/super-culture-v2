@@ -1,4 +1,5 @@
 import React, { useState, useContext } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Volume2, Shield, Smile, Trash2, Check, Copy, Radio, Download, Smartphone, RefreshCw } from 'lucide-react';
 import { PageHeader } from '../components/shared';
 import { AudioContext } from '../context/AudioContext';
@@ -403,6 +404,38 @@ export default function SettingsView() {
             </div>
           )}
         </section>
+
+        {/* 6. Android Mobile App (Desktop Web only) */}
+        {!Capacitor.isNativePlatform() && (
+          <section className="sc-card p-4 rounded-2xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Smartphone className="w-4 h-4 text-[#1ED760]" aria-hidden="true" />
+              <h2 className="text-xs font-semibold text-[#F4F4F2] uppercase tracking-wider">
+                Android Mobile App
+              </h2>
+            </div>
+            <p className="text-xs text-[#8A8A8E] mb-3">
+              Experience Super Culture on your Android device with native background playback, lock-screen controls, safe-area edge-to-edge support, and offline audio caching.
+            </p>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={() => openExternal(`https://github.com/${GITHUB_REPO}/releases/latest`)}
+                aria-label="Download Android APK"
+                className="sc-pill min-h-[36px] px-4 py-1.5 bg-[#1ED760] hover:bg-[#22e868] text-[#0B0B0C] font-semibold text-xs flex items-center gap-2 transition cursor-pointer shadow-md"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Download Android APK</span>
+              </button>
+              <button
+                onClick={() => openExternal(`https://github.com/${GITHUB_REPO}/releases`)}
+                aria-label="View All Releases on GitHub"
+                className="sc-pill min-h-[36px] px-3.5 py-1.5 bg-white/10 hover:bg-white/15 text-[#F4F4F2] text-xs font-medium flex items-center gap-1.5 transition cursor-pointer border border-white/10"
+              >
+                <span>Release Notes</span>
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

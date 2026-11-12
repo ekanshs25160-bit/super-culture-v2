@@ -1,19 +1,65 @@
 /**
  * Universal RFC-4180 Compliant CSV Playlist Parser
  * Handles quoted cells, escaped quotes (""), CRLF/LF line endings, and UTF-8 BOM.
- * Auto-detects columns across Spotify/Exportify, TuneMyMusic, Apple Music, Soundiiz, and generic CSVs.
+ * Auto-detects delimiters (comma, semicolon, tab) and columns across Spotify/Exportify,
+ * TuneMyMusic, Apple Music, Soundiiz, and generic CSVs.
  */
+
+/**
+ * Detects whether the CSV content is delimited by commas, semicolons, or tabs.
+ * @param {string} text
+ * @returns {',' | ';' | '\t'}
+ */
+export function detectDelimiter(text) {
+  if (typeof text !== 'string' || !text.length) return ',';
+
+  let inQuotes = false;
+  let commas = 0;
+  let semicolons = 0;
+  let tabs = 0;
+  let lines = 0;
+
+  for (let i = 0; i < text.length && lines < 5; i++) {
+    const char = text[i];
+    if (char === '"') {
+      if (inQuotes && i + 1 < text.length && text[i + 1] === '"') {
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes) {
+      if (char === '\n') {
+        lines++;
+      } else if (char === ',') {
+        commas++;
+      } else if (char === ';') {
+        semicolons++;
+      } else if (char === '\t') {
+        tabs++;
+      }
+    }
+  }
+
+  if (tabs > commas && tabs > semicolons) return '\t';
+  if (semicolons > commas && semicolons > tabs) return ';';
+  return ',';
+}
 
 /**
  * Parses raw CSV text into a 2D array of rows and cells adhering to RFC-4180.
  * @param {string} text
+ * @param {string} [customDelimiter]
  * @returns {string[][]}
  */
-export function parseRawCsv(text) {
+export function parseRawCsv(text, customDelimiter) {
   if (typeof text !== 'string' || !text.trim()) return [];
 
   // 1. Strip UTF-8 BOM if present
-  let cleanText = text.replace(/^\uFEFF/, '');
+  const cleanText = text.replace(/^\uFEFF/, '');
+  const delimiter = customDelimiter || detectDelimiter(cleanText);
 
   const rows = [];
   let currentRow = [];
@@ -39,7 +85,7 @@ export function parseRawCsv(text) {
       }
     }
 
-    if (char === ',' && !inQuotes) {
+    if (char === delimiter && !inQuotes) {
       currentRow.push(currentCell);
       currentCell = '';
       i++;
@@ -116,7 +162,7 @@ export function parseDurationMs(raw) {
  * @param {string[]} candidates
  * @returns {number}
  */
-function findColumnIndex(headers, candidates) {
+export function findColumnIndex(headers, candidates) {
   const normalizedHeaders = headers.map((h) => h.trim().toLowerCase().replace(/[\s_-]+/g, ' '));
   const normalizedCandidates = candidates.map((c) => c.toLowerCase().replace(/[\s_-]+/g, ' '));
 
@@ -126,13 +172,64 @@ function findColumnIndex(headers, candidates) {
     if (idx !== -1) return idx;
   }
 
-  // 2. Substring match (e.g. "Track Name" matches "track")
+  // 2. Header contains candidate phrase (e.g. "spotify track name" matches "track name")
   for (const candidate of normalizedCandidates) {
-    const idx = normalizedHeaders.findIndex((h) => h.includes(candidate) || candidate.includes(h));
+    const idx = normalizedHeaders.findIndex((h) => h.includes(candidate));
+    if (idx !== -1) return idx;
+  }
+
+  // 3. Word boundary match if candidate is a single word (e.g. "title", "artist")
+  for (const candidate of normalizedCandidates) {
+    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(^|\\s)${escaped}(\\s|$)`, 'i');
+    const idx = normalizedHeaders.findIndex((h) => regex.test(h));
     if (idx !== -1) return idx;
   }
 
   return -1;
+}
+
+/**
+ * Cleans track titles from Spotify/streaming export noise (e.g. "- Remastered 2021", "(feat. X)", etc.)
+ * for resilient YouTube Music search query matching.
+ * @param {string} title
+ * @returns {string}
+ */
+export function cleanSearchTitle(title) {
+  if (typeof title !== 'string' || !title.trim()) return '';
+
+  let cleaned = title;
+
+  // 1. Remove bracketed/parenthesized edition/remaster/live/feat tags
+  cleaned = cleaned.replace(
+    /\s*[\(\[](?:(?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+|(?:19|20)\d{2}\s+remaster(?:ed)?|remaster(?:ed)?(?:\s+(?:19|20)\d{2})?|live(?:\s+at|\s+from)?\s+[^)\]]*|deluxe(?:\s+edition)?|bonus\s+track|radio\s+edit|original\s+mix|mono(?:\s+version)?|stereo(?:\s+version)?|acoustic(?:\s+version)?|instrumental|edit|mix|version)[\)\]]/gi,
+    ''
+  );
+
+  // 2. Remove trailing dashes with remaster/live/feat
+  cleaned = cleaned.replace(
+    /\s*-\s*(?:(?:feat\.?|ft\.?|featuring)\s+.+|(?:19|20)\d{2}\s+remaster(?:ed)?|remaster(?:ed)?(?:\s+(?:19|20)\d{2})?|live(?:\s+at|\s+from)?.+|deluxe.*|bonus\s+track.*|radio\s+edit.*|version.*)$/gi,
+    ''
+  );
+
+  // 3. Remove inline "feat. / ft." up to next parenthesis or end
+  cleaned = cleaned.replace(/\s+(?:feat\.?|ft\.?|featuring)\s+[^(\[-]+/gi, '');
+
+  // 4. Strip extra whitespace and trailing dashes/punctuation
+  cleaned = cleaned.replace(/\s*[-–—:]\s*$/, '').trim();
+
+  return cleaned || title.trim();
+}
+
+/**
+ * Extracts the primary artist name from a multi-artist string (e.g. "Daft Punk, Pharrell Williams" -> "Daft Punk").
+ * @param {string} artist
+ * @returns {string}
+ */
+export function getPrimaryArtist(artist) {
+  if (typeof artist !== 'string' || !artist.trim()) return '';
+  const parts = artist.split(/[,;/]|(?:\s+&\s+)|\s+(?:feat\.?|ft\.?|featuring)\s+/i);
+  return (parts[0] || '').trim();
 }
 
 /**
@@ -153,12 +250,15 @@ export function parseCsvPlaylist(csvContent) {
   const titleIdx = findColumnIndex(headers, [
     'track name',
     'track_name',
-    'title',
-    'song',
+    'track title',
+    'tracktitle',
     'song name',
+    'song_name',
+    'song title',
+    'song',
+    'title',
     'name',
     'track',
-    'track title',
   ]);
 
   const artistIdx = findColumnIndex(headers, [
@@ -166,39 +266,52 @@ export function parseCsvPlaylist(csvContent) {
     'artist name',
     'artist names',
     'artist_name',
+    'track artist',
+    'song artist',
     'artist',
     'artists',
     'performer',
+    'performers',
     'author',
+    'singer',
+    'creator',
   ]);
 
   const albumIdx = findColumnIndex(headers, [
     'album name',
-    'album',
     'album_name',
+    'album title',
+    'album',
     'record',
+    'collection',
   ]);
 
   const artworkIdx = findColumnIndex(headers, [
     'album image url',
     'image url',
-    'artwork',
+    'image_url',
     'artwork url',
+    'artwork_url',
+    'artwork',
     'album art',
-    'cover',
+    'album_art',
     'cover url',
+    'cover_url',
+    'cover',
     'image',
+    'thumbnail',
   ]);
 
   const durationIdx = findColumnIndex(headers, [
+    'track duration (ms)',
     'duration (ms)',
     'duration_ms',
     'duration ms',
     'duration',
-    'track duration (ms)',
     'track duration',
-    'time',
+    'track length',
     'length',
+    'time',
   ]);
 
   if (titleIdx === -1 && artistIdx === -1) {
@@ -216,7 +329,7 @@ export function parseCsvPlaylist(csvContent) {
             artist,
             album: (row[2] || '').trim(),
             artworkUrl: '',
-            durationMs: null,
+            durationMs: parseDurationMs(row[3]) || null,
           });
         }
       }

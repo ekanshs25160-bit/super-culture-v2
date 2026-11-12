@@ -1,8 +1,22 @@
 import React, { useState, useRef } from 'react';
 import { Upload, X, Loader2, Music, CheckCircle2, AlertCircle } from 'lucide-react';
-import { parseCsvPlaylist, normalizeTrackMetadata } from '../../utils/csvPlaylistParser';
+import {
+  parseCsvPlaylist,
+  normalizeTrackMetadata,
+  cleanSearchTitle,
+  getPrimaryArtist,
+  formatDuration,
+} from '../../utils/csvPlaylistParser';
 import { apiClient } from '../../services/api';
 import { useLibraryStore } from '../../store/useLibraryStore';
+
+function extractTracksFromResponse(res) {
+  if (Array.isArray(res?.tracks)) return res.tracks;
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res?.data?.tracks)) return res.data.tracks;
+  if (Array.isArray(res)) return res;
+  return [];
+}
 
 export default function CsvImportModal({ isOpen, onClose, onImportComplete, showToast }) {
   const [file, setFile] = useState(null);
@@ -72,38 +86,88 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
         const idx = currentIndex++;
         const row = parsedTracks[idx];
 
-        try {
-          const query = `${row.title} ${row.artist}`.trim();
-          const res = await apiClient.music.search(query, 1);
-          const rawTracks = Array.isArray(res?.tracks)
-            ? res.tracks
-            : Array.isArray(res?.data)
-            ? res.data
-            : Array.isArray(res?.data?.tracks)
-            ? res.data.tracks
-            : Array.isArray(res)
-            ? res
-            : [];
+        let matched = null;
+        const cleanTitle = cleanSearchTitle(row.title);
+        const primaryArtist = getPrimaryArtist(row.artist);
 
-          if (rawTracks.length > 0 && (rawTracks[0].videoId || rawTracks[0].id)) {
-            const match = rawTracks[0];
-            matchedTracks.push(
-              normalizeTrackMetadata(match, {
-                title: row.title,
-                artist: row.artist,
-                album: row.album,
-                durationMs: row.durationMs,
-                artworkUrl: row.artworkUrl,
-                addedAt: baseImportTimestamp + idx,
-              })
-            );
+        // Step 1: Cleaned title + primary artist
+        const query1 = `${cleanTitle} ${primaryArtist}`.trim();
+        try {
+          const res1 = await apiClient.music.search(query1, 1);
+          const tracks1 = extractTracksFromResponse(res1);
+          if (tracks1.length > 0 && (tracks1[0].videoId || tracks1[0].id)) {
+            matched = tracks1[0];
           }
-        } catch (err) {
-          console.warn(`[CsvImportModal] Match failed for "${row.title}":`, err?.message);
-        } finally {
-          completedCount++;
-          setProgress({ current: completedCount, total: totalCount });
+        } catch {
+          // continue to fallback queries
         }
+
+        // Step 2: Exact raw title + artist if different from query1
+        if (!matched) {
+          const query2 = `${row.title} ${row.artist}`.trim();
+          if (query2 !== query1) {
+            try {
+              const res2 = await apiClient.music.search(query2, 1);
+              const tracks2 = extractTracksFromResponse(res2);
+              if (tracks2.length > 0 && (tracks2[0].videoId || tracks2[0].id)) {
+                matched = tracks2[0];
+              }
+            } catch {
+              // continue to cleanTitle query
+            }
+          }
+        }
+
+        // Step 3: Cleaned title alone if still no match
+        if (!matched && cleanTitle && cleanTitle !== query1) {
+          try {
+            const res3 = await apiClient.music.search(cleanTitle, 1);
+            const tracks3 = extractTracksFromResponse(res3);
+            if (tracks3.length > 0 && (tracks3[0].videoId || tracks3[0].id)) {
+              matched = tracks3[0];
+            }
+          } catch {
+            // will fallback to preserved metadata
+          }
+        }
+
+        if (matched) {
+          matchedTracks.push(
+            normalizeTrackMetadata(matched, {
+              title: row.title,
+              artist: row.artist,
+              album: row.album,
+              durationMs: row.durationMs,
+              artworkUrl: row.artworkUrl,
+              addedAt: baseImportTimestamp + idx,
+            })
+          );
+        } else {
+          // Guaranteed preservation: Never drop any CSV track. Create high-fidelity fallback track.
+          const fallbackId = `csv-${baseImportTimestamp}-${idx}`;
+          const formattedDur = row.durationMs ? formatDuration(row.durationMs) : '3:30';
+          const durSecs = row.durationMs ? Math.round(row.durationMs / 1000) : 210;
+          const cover =
+            row.artworkUrl ||
+            'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=544&h=544&fit=crop';
+          matchedTracks.push({
+            id: fallbackId,
+            videoId: fallbackId,
+            title: row.title,
+            artist: row.artist || 'Unknown Artist',
+            album: row.album || '',
+            cover,
+            thumbnailUrl: cover,
+            duration: formattedDur,
+            durationFormatted: formattedDur,
+            seconds: durSecs,
+            addedAt: baseImportTimestamp + idx,
+            isPendingResolution: true,
+          });
+        }
+
+        completedCount++;
+        setProgress({ current: completedCount, total: totalCount });
       }
     }
 
@@ -115,12 +179,12 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
 
     setIsImporting(false);
 
-    if (isCancelledRef.current) {
-      if (matchedTracks.length === 0) return;
+    if (isCancelledRef.current && matchedTracks.length === 0) {
+      return;
     }
 
     if (matchedTracks.length === 0) {
-      if (showToast) showToast('No matching tracks could be resolved on YouTube');
+      if (showToast) showToast('No tracks found to import');
       return;
     }
 
@@ -129,9 +193,9 @@ export default function CsvImportModal({ isOpen, onClose, onImportComplete, show
 
     try {
       const created = await createPlaylistWithMultipleTracks(finalName, matchedTracks);
-      const msg = `Imported ${matchedTracks.length} of ${totalCount} tracks into "${finalName}"`;
+      const msg = `Imported ${matchedTracks.length} tracks into "${finalName}"`;
       if (showToast) showToast(msg);
-      if (onImportComplete) {
+      if (onImportComplete && created) {
         onImportComplete(created);
       }
       onClose();

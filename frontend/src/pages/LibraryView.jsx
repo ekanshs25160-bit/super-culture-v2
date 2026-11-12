@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, FileText, X, Loader2, Upload } from 'lucide-react';
+import { Plus, FileText, X, Loader2, Upload, Download } from 'lucide-react';
 import { PageHeader, PlaylistCard, Skeleton, ConfirmDialog } from '../components/shared';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
@@ -129,6 +129,14 @@ export default function LibraryView() {
         subtitle="Manage your saved music, curated archives, and personalized playlists."
       >
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => navigate('/downloaded')}
+            aria-label="View downloaded offline tracks"
+            className="sc-pill min-h-[36px] px-3.5 py-1.5 bg-white/10 hover:bg-white/15 text-[#F4F4F2] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer border border-white/10 shrink-0"
+          >
+            <Download className="w-3.5 h-3.5 text-[#1ED760]" aria-hidden="true" />
+            <span>Downloaded</span>
+          </button>
           <button
             onClick={() => setIsCsvModalOpen(true)}
             aria-label="Import playlist from CSV file"

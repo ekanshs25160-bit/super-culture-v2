@@ -10,14 +10,17 @@ import {
   Plus,
   ArrowUpRight,
   Heart,
+  Upload,
 } from 'lucide-react';
 import { useAudio } from '../hooks/useAudio';
 import { useLibraryStore } from '../store/useLibraryStore';
+import { useUiStore } from '../store/useUiStore';
 import CoverImage from './shared/CoverImage';
 import Skeleton from './shared/Skeleton';
 
 export default function LeftSidebar() {
   const { showToast } = useAudio();
+  const openCsvImport = useUiStore((s) => s.openCsvImport);
 
   const {
     likedCount,
@@ -109,6 +112,18 @@ export default function LeftSidebar() {
             <span>Library</span>
           </div>
           <div className="flex items-center gap-1.5">
+            {/* Import CSV Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                openCsvImport();
+              }}
+              aria-label="Import Playlist from CSV"
+              title="Import Playlist from CSV"
+              className="w-8 h-8 sm:w-7 sm:h-7 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-[#F4F4F2] hover:text-[#1ED760] transition cursor-pointer min-w-[32px] min-h-[32px]"
+            >
+              <Upload className="w-4 h-4 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
+            </button>
             {/* "+" Button to create a playlist */}
             <button
               onClick={handleCreatePlaylist}

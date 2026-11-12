@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useLocation, Routes, Route, Outlet } from 'react-router-dom';
+import { useLocation, useNavigate, Routes, Route, Outlet } from 'react-router-dom';
 import { X, Library, Users } from 'lucide-react';
 import { AudioProvider } from './context/AudioContext';
+import { useAudio } from './hooks/useAudio';
 import { useUiStore } from './store/useUiStore';
 import { useMediaSession } from './hooks/useMediaSession';
+import { useDesktopShortcuts } from './hooks/useDesktopShortcuts';
 import { apiClient } from './services/api';
 import AudioEngineHost from './components/AudioEngineHost';
 import EditorialBackground from './components/EditorialBackground';
@@ -14,6 +16,7 @@ import PlayerBar from './components/PlayerBar';
 import InstallPrompt from './components/InstallPrompt';
 import UpdateBanner from './components/UpdateBanner';
 import { AddToPlaylistModal } from './components/shared';
+import CsvImportModal from './components/library/CsvImportModal';
 
 // Page Views
 import Home from './pages/Home';
@@ -30,11 +33,16 @@ import ArtistView from './pages/ArtistView';
 
 function AppLayout() {
   const location = useLocation();
-  const { isMobileMenuOpen, closeMobileMenu } = useUiStore();
+  const navigate = useNavigate();
+  const { isMobileMenuOpen, closeMobileMenu, isCsvImportOpen, closeCsvImport } = useUiStore();
+  const { showToast } = useAudio();
   const [mobileTab, setMobileTab] = useState('nav');
 
   // Mount native lock-screen / notification controls
   useMediaSession();
+
+  // Mount desktop global keyboard shortcuts
+  useDesktopShortcuts();
 
   // Close mobile drawer on route transition
   useEffect(() => {
@@ -150,6 +158,18 @@ function AppLayout() {
 
       {/* 6. Global Add to Playlist Modal */}
       <AddToPlaylistModal />
+
+      {/* 7. Global CSV Playlist File Importer Modal */}
+      <CsvImportModal
+        isOpen={isCsvImportOpen}
+        onClose={closeCsvImport}
+        onImportComplete={(created) => {
+          if (created?.id) {
+            navigate(`/library/${created.id}`);
+          }
+        }}
+        showToast={showToast}
+      />
     </div>
   );
 }

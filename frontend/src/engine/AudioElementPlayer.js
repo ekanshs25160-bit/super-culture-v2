@@ -1,5 +1,6 @@
 import { PlayerState } from './PlayerConstants.js';
 import { apiClient, API_BASE } from '../services/api.js';
+import { getOfflineAudioBlob } from '../utils/indexedDbAudio.js';
 
 // Signed stream tokens live 2h; keep preloaded URLs well inside that window
 const PRELOAD_MAX_AGE_MS = 90 * 60 * 1000;
@@ -252,7 +253,19 @@ export class AudioElementPlayer {
         let throttled = false;
         let reason = null;
 
-        if (typeof caches !== 'undefined') {
+        // 1. Check IndexedDB first for offline audio blob
+        try {
+          const idbBlob = await getOfflineAudioBlob(videoId);
+          if (idbBlob && idbBlob.size > 0) {
+            url = URL.createObjectURL(idbBlob);
+            isBlob = true;
+          }
+        } catch (idbErr) {
+          void idbErr;
+        }
+
+        // 2. Check Cache API as fallback
+        if (!url && typeof caches !== 'undefined') {
           try {
             const cache = await caches.open('sc-offline-audio');
             const match = await cache.match(`/offline-audio/${videoId}`);
@@ -429,9 +442,21 @@ export class AudioElementPlayer {
 
     const loadTask = (async () => {
       try {
-        // 1. Check offline Cache API for saved audio blob
+        // 1. Check IndexedDB first for saved offline audio blob
         let offlineBlobUrl = null;
-        if (typeof caches !== 'undefined') {
+        try {
+          const idbBlob = await getOfflineAudioBlob(videoId);
+          if (token !== this.loadToken) return;
+          if (idbBlob && idbBlob.size > 0) {
+            offlineBlobUrl = URL.createObjectURL(idbBlob);
+            this.currentBlobUrl = offlineBlobUrl;
+          }
+        } catch (idbErr) {
+          void idbErr;
+        }
+
+        // 2. Check offline Cache API as fallback
+        if (!offlineBlobUrl && typeof caches !== 'undefined') {
           try {
             const cache = await caches.open('sc-offline-audio');
             if (token !== this.loadToken) return;

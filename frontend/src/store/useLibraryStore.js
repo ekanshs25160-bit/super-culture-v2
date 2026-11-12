@@ -10,6 +10,10 @@ import {
   loadDownloadedTracks,
   saveDownloadedTracks,
 } from './libraryHelpers.js';
+import {
+  saveOfflineAudioBlob,
+  deleteOfflineAudioBlob,
+} from '../utils/indexedDbAudio.js';
 
 export const useLibraryStore = create((set, get) => ({
   likedSongs: [],
@@ -214,6 +218,14 @@ export const useLibraryStore = create((set, get) => ({
 
     persistTracks(playlistId, nextTracks);
     set({ playlists: nextPlaylists });
+
+    // Persist to backend SQLite when not a local temporary playlist
+    if (!playlistId.startsWith('temp-playlist-') && apiClient.library?.addTrackToPlaylist) {
+      apiClient.library.addTrackToPlaylist(playlistId, normalized).catch((err) => {
+        console.warn('[LibraryStore] Failed to save track to backend playlist:', err?.message);
+      });
+    }
+
     return { added: true, playlistName };
   },
 
@@ -310,14 +322,35 @@ export const useLibraryStore = create((set, get) => ({
           })
         )
         .filter(Boolean);
+      const firstCover = normalizedList[0]?.cover || normalizedList[0]?.thumbnailUrl;
       const playlists = get().playlists;
       const nextPlaylists = playlists.map((p) =>
-        p.id === created.id ? { ...p, tracks: normalizedList } : p
+        p.id === created.id
+          ? {
+              ...p,
+              coverUrl: firstCover || p.coverUrl,
+              tracks: normalizedList,
+            }
+          : p
       );
       persistTracks(created.id, normalizedList);
       set({ playlists: nextPlaylists });
+
+      // Persist to backend SQLite when not a local temporary playlist
+      if (created.id && !created.id.startsWith('temp-playlist-') && apiClient.library?.addTracksBatch) {
+        try {
+          await apiClient.library.addTracksBatch(created.id, normalizedList);
+        } catch (batchErr) {
+          console.warn('[LibraryStore] Failed to save batch tracks to backend:', batchErr?.message);
+        }
+      }
+
+      // Background sync to ensure store and server are 100% aligned
+      get().fetchLibraryOverview().catch(() => {});
+
       return {
         ...created,
+        coverUrl: firstCover || created.coverUrl,
         tracks: normalizedList,
       };
     }
@@ -346,7 +379,17 @@ export const useLibraryStore = create((set, get) => ({
       }
       const audioBlob = await audioRes.blob();
 
-      // 3. Put into Cache API under 'sc-offline-audio'
+      // 3. Put into IndexedDB (primary offline audio store for desktop web) and Cache API
+      try {
+        await saveOfflineAudioBlob(
+          videoId,
+          audioBlob,
+          audioRes.headers.get('Content-Type') || 'audio/mp4'
+        );
+      } catch (idbErr) {
+        console.warn('[LibraryStore] IndexedDB audio save error:', idbErr);
+      }
+
       if (typeof caches !== 'undefined') {
         const cache = await caches.open('sc-offline-audio');
         const headers = new Headers();
@@ -398,6 +441,12 @@ export const useLibraryStore = create((set, get) => ({
 
   removeDownloadedTrack: async (videoId) => {
     if (!videoId) return;
+
+    try {
+      await deleteOfflineAudioBlob(videoId);
+    } catch (idbErr) {
+      console.warn('[LibraryStore] IndexedDB audio delete error:', idbErr);
+    }
 
     if (typeof caches !== 'undefined') {
       try {

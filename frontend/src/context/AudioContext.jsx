@@ -236,6 +236,38 @@ export const AudioProvider = ({ children }) => {
       setIsEmptyPlayer(false);
     }
 
+    let activeTrack = track;
+    if (track.isPendingResolution || (track.videoId && String(track.videoId).startsWith('csv-'))) {
+      try {
+        const query = `${track.title} ${track.artist}`.trim();
+        const searchRes = await apiClient.music.search(query, 1);
+        const rawTracks = Array.isArray(searchRes?.tracks)
+          ? searchRes.tracks
+          : Array.isArray(searchRes?.data)
+          ? searchRes.data
+          : Array.isArray(searchRes?.data?.tracks)
+          ? searchRes.data.tracks
+          : Array.isArray(searchRes)
+          ? searchRes
+          : [];
+
+        if (rawTracks.length > 0 && (rawTracks[0].videoId || rawTracks[0].id)) {
+          const match = rawTracks[0];
+          const realVid = match.videoId || match.id;
+          activeTrack = {
+            ...track,
+            videoId: realVid,
+            id: realVid,
+            cover: match.thumbnailUrl || match.cover || track.cover,
+            thumbnailUrl: match.thumbnailUrl || match.cover || track.thumbnailUrl,
+            isPendingResolution: false,
+          };
+        }
+      } catch (err) {
+        console.warn('[AudioContext] Dynamic track resolution failed:', err);
+      }
+    }
+
     let effectiveQueue;
     let effectiveIndex;
 
@@ -244,9 +276,9 @@ export const AudioProvider = ({ children }) => {
       originalQueueRef.current = customQueue;
 
       const foundIdx = customQueue.findIndex(
-        (t) => (track.videoId && t.videoId === track.videoId) || t.id === track.id
+        (t) => (activeTrack.videoId && t.videoId === activeTrack.videoId) || t.id === activeTrack.id || (t.title === activeTrack.title && t.artist === activeTrack.artist)
       );
-      const activeTrack = foundIdx !== -1 ? customQueue[foundIdx] : track;
+      const queueTrack = foundIdx !== -1 ? { ...customQueue[foundIdx], ...activeTrack } : activeTrack;
 
       if (stateRef.current.isShuffle && customQueue.length > 1) {
         const others = customQueue.filter((_, idx) => idx !== foundIdx);
@@ -254,10 +286,12 @@ export const AudioProvider = ({ children }) => {
           const j = Math.floor(Math.random() * (i + 1));
           [others[i], others[j]] = [others[j], others[i]];
         }
-        effectiveQueue = [activeTrack, ...others];
+        effectiveQueue = [queueTrack, ...others];
         effectiveIndex = 0;
       } else {
-        effectiveQueue = customQueue;
+        effectiveQueue = foundIdx !== -1
+          ? customQueue.map((t, idx) => (idx === foundIdx ? queueTrack : t))
+          : customQueue;
         effectiveIndex = foundIdx !== -1 ? foundIdx : 0;
       }
       setQueue(effectiveQueue);
@@ -265,19 +299,20 @@ export const AudioProvider = ({ children }) => {
     } else {
       const currentQueue = stateRef.current.queue;
       const existsIndex = currentQueue.findIndex(
-        (t) => (track.videoId && t.videoId === track.videoId) || t.id === track.id
+        (t) => (activeTrack.videoId && t.videoId === activeTrack.videoId) || t.id === activeTrack.id || (t.title === activeTrack.title && t.artist === activeTrack.artist)
       );
       if (existsIndex !== -1) {
-        effectiveQueue = currentQueue;
+        effectiveQueue = currentQueue.map((t, idx) => (idx === existsIndex ? { ...t, ...activeTrack } : t));
         effectiveIndex = existsIndex;
+        setQueue(effectiveQueue);
         setCurrentTrackIndex(existsIndex);
       } else {
-        const updatedQueue = [...currentQueue, track];
+        const updatedQueue = [...currentQueue, activeTrack];
         effectiveQueue = updatedQueue;
         effectiveIndex = updatedQueue.length - 1;
         setQueue(updatedQueue);
         setCurrentTrackIndex(effectiveIndex);
-        const updatedOriginal = [...(originalQueueRef.current || []), track];
+        const updatedOriginal = [...(originalQueueRef.current || []), activeTrack];
         setOriginalQueue(updatedOriginal);
         originalQueueRef.current = updatedOriginal;
       }
@@ -286,7 +321,7 @@ export const AudioProvider = ({ children }) => {
     // Update stateRef synchronously so locked-screen transitions never read stale React state
     stateRef.current = {
       ...stateRef.current,
-      currentTrack: track,
+      currentTrack: activeTrack,
       queue: effectiveQueue,
       isPlaying: true,
     };
@@ -305,23 +340,23 @@ export const AudioProvider = ({ children }) => {
 
       if (
         nextCandidate?.videoId &&
-        nextCandidate.videoId !== track.videoId &&
+        nextCandidate.videoId !== activeTrack.videoId &&
         playerRef.current &&
         typeof playerRef.current.preloadNextStreamUrl === 'function'
       ) {
-        plannedNextRef.current = { fromVideoId: track.videoId, track: nextCandidate };
+        plannedNextRef.current = { fromVideoId: activeTrack.videoId, track: nextCandidate };
         playerRef.current.preloadNextStreamUrl(nextCandidate.videoId);
       } else {
-        plannedNextRef.current = { fromVideoId: track.videoId, track: null };
+        plannedNextRef.current = { fromVideoId: activeTrack.videoId, track: null };
       }
     }
 
-    setCurrentTrack(track);
+    setCurrentTrack(activeTrack);
     if (!isSameTrack) {
       setCurrentTime(0);
     }
-    if (track.seconds) {
-      setDuration(track.seconds);
+    if (activeTrack.seconds) {
+      setDuration(activeTrack.seconds);
     }
 
     if (isSameTrack) {
@@ -332,10 +367,10 @@ export const AudioProvider = ({ children }) => {
           console.warn('[AudioContext] Could not resume same track:', err);
         }
       }
-    } else if (shouldLoadOnPlayerRef && playerRef.current && track.videoId) {
+    } else if (shouldLoadOnPlayerRef && playerRef.current && activeTrack.videoId) {
       try {
         await playerRef.current.loadVideoById({
-          videoId: track.videoId,
+          videoId: activeTrack.videoId,
           startSeconds: 0,
         });
       } catch (err) {
@@ -344,13 +379,13 @@ export const AudioProvider = ({ children }) => {
     }
 
     setIsPlaying(true);
-    showToast(`Playing: ${track.title} — ${track.artist}`);
+    showToast(`Playing: ${activeTrack.title} — ${activeTrack.artist}`);
 
     try {
       const stored = localStorage.getItem('super_culture_playback_history');
       const hist = stored ? JSON.parse(stored) : [];
-      const id = track.videoId || track.id;
-      const historyItem = { ...track, playedAt: Date.now() };
+      const id = activeTrack.videoId || activeTrack.id;
+      const historyItem = { ...activeTrack, playedAt: Date.now() };
       const filtered = Array.isArray(hist) ? hist.filter((t) => (t.videoId || t.id) !== id) : [];
       localStorage.setItem('super_culture_playback_history', JSON.stringify([historyItem, ...filtered].slice(0, 50)));
       window.dispatchEvent(new Event('super_culture_history_updated'));

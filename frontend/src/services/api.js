@@ -211,6 +211,32 @@ export const apiClient = {
       const res = await api.delete(`/library/playlists/${id}`);
       return res.data;
     },
+    addTracksBatch: async (playlistId, tracks) => {
+      if (isStandaloneNative()) {
+        const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
+        const target = playlists.find((p) => p.id === playlistId);
+        if (target) {
+          target.tracks = [...(target.tracks || []), ...tracks];
+          localStorage.setItem('super_culture_local_playlists', JSON.stringify(playlists));
+        }
+        return { ok: true, count: tracks.length };
+      }
+      const res = await api.post(`/library/playlists/${playlistId}/tracks/batch`, { tracks });
+      return res.data;
+    },
+    addTrackToPlaylist: async (playlistId, track) => {
+      if (isStandaloneNative()) {
+        const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');
+        const target = playlists.find((p) => p.id === playlistId);
+        if (target) {
+          target.tracks = [...(target.tracks || []), track];
+          localStorage.setItem('super_culture_local_playlists', JSON.stringify(playlists));
+        }
+        return { ok: true, track };
+      }
+      const res = await api.post(`/library/playlists/${playlistId}/tracks`, { track });
+      return res.data;
+    },
     removeTrackFromPlaylist: async (id, videoId) => {
       if (isStandaloneNative()) {
         const playlists = JSON.parse(localStorage.getItem('super_culture_local_playlists') || '[]');

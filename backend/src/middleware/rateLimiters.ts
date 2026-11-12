@@ -23,10 +23,16 @@ export function hasValidSignedStreamToken(req: Request): boolean {
 // General API rate limiter
 export const apiRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // 300 requests per window
+  max: 5000, // Generous limit for music search, batch imports & library browsing
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => hasValidSignedStreamToken(req),
+  skip: (req) => {
+    if (hasValidSignedStreamToken(req)) return true;
+    const ip = req.ip || req.socket.remoteAddress || '';
+    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
+    if (req.originalUrl?.includes('/api/library')) return true;
+    return false;
+  },
   handler: (_req, res) => {
     res.status(429).json({
       error: 'Too many requests, please try again later.',
