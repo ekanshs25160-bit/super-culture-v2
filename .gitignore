@@ -80,6 +80,7 @@ Thumbs.db
 # Testing & Coverage
 coverage/
 .nyc_output/
+diagnostics/
 
 # Capacitor & Mobile App Sync Outputs
 **/android/app/src/main/assets/public/
@@ -94,10 +95,14 @@ coverage/
 
 # Android / Gradle Builds & Outputs
 .gradle/
+android/.gradle/
 **/android/.gradle/
+android/build/
 **/android/build/
+android/app/build/
 **/android/app/build/
 local.properties
+android/local.properties
 **/android/local.properties
 *.apk
 *.aab
@@ -106,6 +111,8 @@ local.properties
 *.dex
 *.class
 captures/
+android/captures/
+**/android/captures/
 .externalNativeBuild/
 .cxx/
 lint/intermediates/

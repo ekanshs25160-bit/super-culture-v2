@@ -8,6 +8,9 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'https://super-culture-backend.onrender.com',
 ];
 
+const PRIVATE_NETWORK_ORIGIN =
+  /^https?:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}|[a-z0-9-]+\.local|[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net)(:\d+)?$/i;
+
 export const isOriginAllowed = (origin?: string): boolean => {
   if (!origin) return true;
   const normalizedOrigin = origin.replace(/\/$/, '').toLowerCase();
@@ -46,6 +49,14 @@ export const isOriginAllowed = (origin?: string): boolean => {
     if (isLocalhost) {
       return true;
     }
+  }
+
+  // 6. Permit LAN / Tailscale origins (phone on same Wi-Fi, *.ts.net) in dev or when explicitly enabled.
+  if (
+    (env.isDev || process.env.ALLOW_PRIVATE_NETWORK_ORIGINS === 'true') &&
+    PRIVATE_NETWORK_ORIGIN.test(normalizedOrigin)
+  ) {
+    return true;
   }
 
   return false;

@@ -6,6 +6,7 @@ export default function PlayerTransport({
   isAutoplayBlocked = false,
   isShuffle,
   isRepeat,
+  repeatMode = 'off',
   currentSeconds,
   totalSeconds,
   progressPct,
@@ -99,10 +100,22 @@ export default function PlayerTransport({
         {/* Repeat (Desktop only; on mobile lives in tray/sheet) */}
         <button
           onClick={onToggleRepeat}
-          aria-label="Toggle repeat"
-          title="Toggle repeat"
-          className={`hidden md:inline-flex min-w-[44px] min-h-[44px] rounded-full items-center justify-center transition cursor-pointer ${
-            isRepeat
+          aria-label={
+            repeatMode === 'one'
+              ? 'Repeat current track (1)'
+              : repeatMode === 'all'
+              ? 'Repeat all tracks'
+              : 'Repeat off'
+          }
+          title={
+            repeatMode === 'one'
+              ? 'Repeat: Current Track (1)'
+              : repeatMode === 'all'
+              ? 'Repeat: All Tracks'
+              : 'Repeat: Off'
+          }
+          className={`hidden md:inline-flex min-w-[44px] min-h-[44px] rounded-full items-center justify-center transition cursor-pointer relative ${
+            isRepeat || repeatMode !== 'off'
               ? 'text-[#1ED760] drop-shadow-[0_0_8px_rgba(30,215,96,0.6)]'
               : 'text-[#8A8A8E] hover:text-white'
           }`}
@@ -112,6 +125,11 @@ export default function PlayerTransport({
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 13v2a4 4 0 01-4 4H3" />
           </svg>
+          {repeatMode === 'one' && (
+            <span className="absolute -top-1 -right-1 text-[9px] font-bold bg-[#1ED760] text-[#09090b] rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none shadow">
+              1
+            </span>
+          )}
         </button>
       </div>
 

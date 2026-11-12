@@ -9,6 +9,7 @@
     "sync": "npm run build && npx cap sync",
     "open:android": "npx cap open android",
     "open:ios": "npx cap open ios",
+    "generate:assets": "npx @capacitor/assets generate --android --iconBackgroundColor '#09090b' --splashBackgroundColor '#09090b'",
     "lint": "eslint .",
     "test": "node --test src/__tests__/*.test.js",
     "preview": "vite preview"
@@ -27,6 +28,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
     "@capacitor/cli": "^8.6.0",
     "@eslint/js": "^10.0.1",
     "@types/react": "^19.2.14",

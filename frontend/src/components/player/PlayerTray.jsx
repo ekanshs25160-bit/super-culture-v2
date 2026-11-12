@@ -6,6 +6,7 @@ export default function PlayerTray({
   trayRef,
   isShuffle,
   isRepeat,
+  repeatMode = 'off',
   volumePct,
   onToggleShuffle,
   onToggleRepeat,
@@ -39,10 +40,28 @@ export default function PlayerTray({
       </button>
       <button
         onClick={onToggleRepeat}
-        aria-label="Toggle repeat"
-        className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer ${isRepeat ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
+        aria-label={
+          repeatMode === 'one'
+            ? 'Repeat current track (1)'
+            : repeatMode === 'all'
+            ? 'Repeat all tracks'
+            : 'Repeat off'
+        }
+        title={
+          repeatMode === 'one'
+            ? 'Repeat: Current Track (1)'
+            : repeatMode === 'all'
+            ? 'Repeat: All Tracks'
+            : 'Repeat: Off'
+        }
+        className={`min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition cursor-pointer relative ${isRepeat || repeatMode !== 'off' ? 'text-[#1ED760]' : 'text-[#8A8A8E]'}`}
       >
         <Repeat className="w-4 h-4" />
+        {repeatMode === 'one' && (
+          <span className="absolute top-1 right-1 text-[8px] font-bold bg-[#1ED760] text-[#09090b] rounded-full w-3 h-3 flex items-center justify-center leading-none">
+            1
+          </span>
+        )}
       </button>
       <button
         onClick={onAddToPlaylist}
